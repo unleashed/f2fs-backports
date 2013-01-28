@@ -1,0 +1,37 @@
+From a038c50656bb1f52e49be22421ecb274fca4a960 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Fri, 25 Jan 2013 17:39:47 +0100
+Subject: [PATCH 10/12] f2fs: 3.2 kernels do not have d_make_root, so use
+ d_alloc_root and iput
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/super.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index cca36f0..2c8c78c 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -588,7 +588,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 	if (!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size)
+ 		goto free_root_inode;
+ 
+-	sb->s_root = d_make_root(root); /* allocate root dentry */
++	sb->s_root = d_alloc_root(root); /* allocate root dentry */
+ 	if (!sb->s_root) {
+ 		err = -ENOMEM;
+ 		goto free_root_inode;
+@@ -611,8 +611,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ fail:
+ 	stop_gc_thread(sbi);
+ free_root_inode:
+-	dput(sb->s_root);
+-	sb->s_root = NULL;
++	iput(root);
+ free_node_inode:
+ 	iput(sbi->node_inode);
+ free_nm:
+-- 
+1.8.1.rc1.17.g75ed918
+

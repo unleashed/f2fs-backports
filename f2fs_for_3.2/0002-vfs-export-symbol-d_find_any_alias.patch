@@ -1,0 +1,61 @@
+From 972f6e5ed16a3bbb3b8d986e3c96a41a934523fb Mon Sep 17 00:00:00 2001
+From: Sage Weil <sage@newdream.net>
+Date: Tue, 10 Jan 2012 09:04:37 -0800
+Subject: [PATCH 02/12] vfs: export symbol d_find_any_alias()
+
+Ceph needs this.
+
+[alex: f2fs needs it too. upstream 46f72b349290d2bd7aecea38f02609d814332df6]
+
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Sage Weil <sage@newdream.net>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/dcache.c            | 11 +++++++++--
+ include/linux/dcache.h |  1 +
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/fs/dcache.c b/fs/dcache.c
+index 63c0c6b..27459b9 100644
+--- a/fs/dcache.c
++++ b/fs/dcache.c
+@@ -1461,7 +1461,14 @@ static struct dentry * __d_find_any_alias(struct inode *inode)
+ 	return alias;
+ }
+ 
+-static struct dentry * d_find_any_alias(struct inode *inode)
++/**
++ * d_find_any_alias - find any alias for a given inode
++ * @inode: inode to find an alias for
++ *
++ * If any aliases exist for the given inode, take and return a
++ * reference for one of them.  If no aliases exist, return %NULL.
++ */
++struct dentry *d_find_any_alias(struct inode *inode)
+ {
+ 	struct dentry *de;
+ 
+@@ -1470,7 +1477,7 @@ static struct dentry * d_find_any_alias(struct inode *inode)
+ 	spin_unlock(&inode->i_lock);
+ 	return de;
+ }
+-
++EXPORT_SYMBOL(d_find_any_alias);
+ 
+ /**
+  * d_obtain_alias - find or allocate a dentry for a given inode
+diff --git a/include/linux/dcache.h b/include/linux/dcache.h
+index 1dfe974..c49e084 100644
+--- a/include/linux/dcache.h
++++ b/include/linux/dcache.h
+@@ -244,6 +244,7 @@ extern struct dentry * d_alloc(struct dentry *, const struct qstr *);
+ extern struct dentry * d_alloc_pseudo(struct super_block *, const struct qstr *);
+ extern struct dentry * d_splice_alias(struct inode *, struct dentry *);
+ extern struct dentry * d_add_ci(struct dentry *, struct inode *, struct qstr *);
++extern struct dentry *d_find_any_alias(struct inode *inode);
+ extern struct dentry * d_obtain_alias(struct inode *);
+ extern void shrink_dcache_sb(struct super_block *);
+ extern void shrink_dcache_parent(struct dentry *);
+-- 
+1.8.1.rc1.17.g75ed918
+
