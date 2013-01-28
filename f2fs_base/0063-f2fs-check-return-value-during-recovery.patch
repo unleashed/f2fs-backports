@@ -1,0 +1,31 @@
+From ffebdffe49380a28ce8ec3d27e8889291da78e0c Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 3 Jan 2013 09:33:20 +0900
+Subject: [PATCH 63/80] f2fs: check return value during recovery
+
+This patch resolves Coverity #753102:
+
+>>> No check of the return value of "f2fs_add_link(&dent, inode)".
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/recovery.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 502c63d..6cc046d 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -67,7 +67,7 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ 		kunmap(page);
+ 		f2fs_put_page(page, 0);
+ 	} else {
+-		f2fs_add_link(&dent, inode);
++		err = f2fs_add_link(&dent, inode);
+ 	}
+ 	iput(dir);
+ out:
+-- 
+1.8.1.rc1.17.g75ed918
+
