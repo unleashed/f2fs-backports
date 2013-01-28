@@ -3,6 +3,7 @@ From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Fri, 25 Jan 2013 17:35:02 +0100
 Subject: [PATCH 07/12] f2fs: fix namei prototypes for 3.2 kernels
 
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 ---
  fs/f2fs/namei.c | 10 +++++-----
  1 file changed, 5 insertions(+), 5 deletions(-)
