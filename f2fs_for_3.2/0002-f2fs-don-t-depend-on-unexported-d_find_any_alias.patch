@@ -1,0 +1,39 @@
+From 8b76b5f186751bb869d62cc98188cf713a93710d Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 29 Jan 2013 13:46:34 +0100
+Subject: [PATCH 02/12] f2fs: don't depend on unexported d_find_any_alias
+
+Let's avoid modifying the kernel core.
+[as per http://marc.info/?l=linux-fsdevel&m=135945983230443&w=2 ]
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/file.c | 10 +++-------
+ 1 file changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 2263a36..24f0ad0 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -114,15 +114,11 @@ static int need_to_sync_dir(struct f2fs_sb_info *sbi, struct inode *inode)
+ 	struct dentry *dentry;
+ 	nid_t pino;
+ 
+-	inode = igrab(inode);
+-	dentry = d_find_any_alias(inode);
+-	if (!dentry) {
+-		iput(inode);
++	dentry = list_entry(inode->i_dentry.next, struct dentry, d_alias);
++	if (!dentry)
+ 		return 0;
+-	}
++
+ 	pino = dentry->d_parent->d_inode->i_ino;
+-	dput(dentry);
+-	iput(inode);
+ 	return !is_checkpointed_node(sbi, pino);
+ }
+ 
+-- 
+1.8.1.2.422.g08c0e7f
+
