@@ -1,0 +1,46 @@
+From 48600e44c18e4eb0f7c02ec8633c4c56aef292f0 Mon Sep 17 00:00:00 2001
+From: Changman Lee <cm224.lee@samsung.com>
+Date: Mon, 4 Feb 2013 10:05:09 +0900
+Subject: [PATCH 21/29] f2fs: remove unnecessary gc option check and balance_fs
+
+ 1. If f2fs is mounted with background_gc_off option, checking
+    BG_GC is not redundant.
+ 2. f2fs_balance_fs is checked in f2fs_gc, so this is also redundant.
+
+Signed-off-by: Changman Lee <cm224.lee@samsung.com>
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/gc.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 375e69e..8d293cb 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -49,11 +49,6 @@ static int gc_thread_func(void *data)
+ 			continue;
+ 		}
+ 
+-		f2fs_balance_fs(sbi);
+-
+-		if (!test_opt(sbi, BG_GC))
+-			continue;
+-
+ 		/*
+ 		 * [GC triggering condition]
+ 		 * 0. GC is not conducted currently.
+@@ -96,6 +91,8 @@ int start_gc_thread(struct f2fs_sb_info *sbi)
+ {
+ 	struct f2fs_gc_kthread *gc_th;
+ 
++	if (!test_opt(sbi, BG_GC))
++		return 0;
+ 	gc_th = kmalloc(sizeof(struct f2fs_gc_kthread), GFP_KERNEL);
+ 	if (!gc_th)
+ 		return -ENOMEM;
+-- 
+1.8.1.2.422.g08c0e7f
+
