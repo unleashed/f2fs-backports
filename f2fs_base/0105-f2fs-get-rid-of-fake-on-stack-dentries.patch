@@ -1,11 +1,17 @@
 From b7f7a5e0be94d13875a1c6c9aa65eeb11a46fc1b Mon Sep 17 00:00:00 2001
 From: Al Viro <viro@zeniv.linux.org.uk>
 Date: Fri, 25 Jan 2013 16:15:43 -0500
-Subject: [PATCH] f2fs: get rid of fake on-stack dentries
+Subject: [PATCH 04/29] f2fs: get rid of fake on-stack dentries
 
 those should never be used for a lot of reasons...
 
+[alex: fixed merge conflict]
+
 Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+
+Conflicts:
+      fs/f2fs/recovery.c
 ---
  fs/f2fs/dir.c      | 12 +++++-------
  fs/f2fs/f2fs.h     |  8 +++++++-
@@ -116,8 +122,8 @@ index b571fee..6200042 100644
  		kunmap(page);
  		f2fs_put_page(page, 0);
  	} else {
--		f2fs_add_link(&dent, inode);
-+		__f2fs_add_link(dir, &name, inode);
+-		err = f2fs_add_link(&dent, inode);
++		err = __f2fs_add_link(dir, &name, inode);
  	}
  	iput(dir);
  out:
