@@ -1,7 +1,7 @@
-From 6c227a31baabe2d9b7070aa8fc55a9a14ea87367 Mon Sep 17 00:00:00 2001
+From 86fc96e746962a9aec028e6120e1d55281ac2d2a Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Thu, 24 Jan 2013 20:33:54 +0100
-Subject: [PATCH 01/12] f2fs: drop usage of sb_{start,end}_pagefault to
+Subject: [PATCH 01/13] f2fs: drop usage of sb_{start,end}_pagefault to
  vfs_check_frozen
 
 Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
@@ -10,15 +10,15 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  1 file changed, 10 insertions(+), 2 deletions(-)
 
 diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
-index 6cdab2c..2263a36 100644
+index b7a053d..07f4500 100644
 --- a/fs/f2fs/file.c
 +++ b/fs/f2fs/file.c
-@@ -36,7 +36,16 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
+@@ -37,7 +37,16 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
  
  	f2fs_balance_fs(sbi);
  
 -	sb_start_pagefault(inode->i_sb);
-+	/* F2FS backport: We replace in old kernels sb_start_pagefault(inode->i_sb) for vfs_check_frozen()
++	/* F2FS backport: We replace in old kernels sb_start_pagefault(inode->i_sb) with vfs_check_frozen()
 +	 * and remove the original sb_end_pagefault(inode->i_sb) after the out label
 +	 *
 +	 * The introduction of sb_{start,end}_pagefault() was made post-3.2 kernels by Jan Kara
@@ -31,7 +31,7 @@ index 6cdab2c..2263a36 100644
  
  	mutex_lock_op(sbi, DATA_NEW);
  
-@@ -91,7 +100,6 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
+@@ -92,7 +101,6 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
  
  	file_update_time(vma->vm_file);
  out:
@@ -40,5 +40,5 @@ index 6cdab2c..2263a36 100644
  }
  
 -- 
-1.8.1.rc1.17.g75ed918
+1.8.1.2.422.g08c0e7f
 

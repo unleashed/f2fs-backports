@@ -1,7 +1,7 @@
-From 1263dd6491e019f3be9bd795137c0f3cd0ea6354 Mon Sep 17 00:00:00 2001
+From 18dad8940dd02f67de1dc5297df53994ab298dfa Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Fri, 25 Jan 2013 17:41:31 +0100
-Subject: [PATCH 12/12] f2fs: replace clear_inode for end_writeback in 3.2
+Subject: [PATCH 12/13] f2fs: replace clear_inode for end_writeback in 3.2
 
 Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 ---
@@ -9,16 +9,16 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
-index bfe4fe4..ebdbf0f 100644
+index a771066..a6ed60e 100644
 --- a/fs/f2fs/inode.c
 +++ b/fs/f2fs/inode.c
-@@ -286,5 +286,5 @@ void f2fs_evict_inode(struct inode *inode)
- 
+@@ -255,5 +255,5 @@ void f2fs_evict_inode(struct inode *inode)
  	remove_inode_page(inode);
+ 	sb_end_intwrite(inode->i_sb);
  no_delete:
 -	clear_inode(inode);
 +	end_writeback(inode);
  }
 -- 
-1.8.1.rc1.17.g75ed918
+1.8.1.2.422.g08c0e7f
 

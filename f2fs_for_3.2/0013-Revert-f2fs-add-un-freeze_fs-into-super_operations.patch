@@ -1,4 +1,4 @@
-From 5830d3ea098889f0ee5f5c5de38aa40338744d7c Mon Sep 17 00:00:00 2001
+From bb6b6366723fca7998ba3f16b112973de43b9217 Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Tue, 29 Jan 2013 17:17:51 +0100
 Subject: [PATCH 13/13] Revert "f2fs: add un/freeze_fs into super_operations"
@@ -14,7 +14,7 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  3 files changed, 25 deletions(-)
 
 diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
-index 9b5d0aa..c386910 100644
+index 94b8a0c..bc183b8 100644
 --- a/fs/f2fs/gc.c
 +++ b/fs/f2fs/gc.c
 @@ -44,11 +44,6 @@ static int gc_thread_func(void *data)
@@ -26,14 +26,14 @@ index 9b5d0aa..c386910 100644
 -			continue;
 -		}
 -
- 		f2fs_balance_fs(sbi);
- 
- 		if (!test_opt(sbi, BG_GC))
+ 		/*
+ 		 * [GC triggering condition]
+ 		 * 0. GC is not conducted currently.
 diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
-index 29b353a..ebdbf0f 100644
+index a6ed60e..d0ea999 100644
 --- a/fs/f2fs/inode.c
 +++ b/fs/f2fs/inode.c
-@@ -278,7 +278,6 @@ void f2fs_evict_inode(struct inode *inode)
+@@ -245,7 +245,6 @@ void f2fs_evict_inode(struct inode *inode)
  	if (inode->i_nlink || is_bad_inode(inode))
  		goto no_delete;
  
@@ -41,7 +41,7 @@ index 29b353a..ebdbf0f 100644
  	set_inode_flag(F2FS_I(inode), FI_NO_ALLOC);
  	i_size_write(inode, 0);
  
-@@ -286,7 +285,6 @@ void f2fs_evict_inode(struct inode *inode)
+@@ -253,7 +252,6 @@ void f2fs_evict_inode(struct inode *inode)
  		f2fs_truncate(inode);
  
  	remove_inode_page(inode);
@@ -50,7 +50,7 @@ index 29b353a..ebdbf0f 100644
  	end_writeback(inode);
  }
 diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
-index 1808ed7..2ec4705 100644
+index 6edbfe5..4e1c1d2 100644
 --- a/fs/f2fs/super.c
 +++ b/fs/f2fs/super.c
 @@ -143,22 +143,6 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
