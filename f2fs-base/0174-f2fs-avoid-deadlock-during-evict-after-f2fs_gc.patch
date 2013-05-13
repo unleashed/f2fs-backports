@@ -1,0 +1,169 @@
+From b007cb90f7b2c2d357b486eca01c0124e49dbe2d Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 30 Apr 2013 11:33:27 +0900
+Subject: [PATCH] f2fs: avoid deadlock during evict after f2fs_gc
+
+o Deadlock case #1
+
+Thread 1:
+- writeback_sb_inodes
+ - do_writepages
+  - f2fs_write_data_pages
+   - write_cache_pages
+    - f2fs_write_data_page
+     - f2fs_balance_fs
+      - wait mutex_lock(gc_mutex)
+
+Thread 2:
+- f2fs_balance_fs
+ - mutex_lock(gc_mutex)
+ - f2fs_gc
+  - f2fs_iget
+   - wait iget_locked(inode->i_lock)
+
+Thread 3:
+- do_unlinkat
+ - iput
+  - lock(inode->i_lock)
+   - evict
+    - inode_wait_for_writeback
+
+o Deadlock case #2
+
+Thread 1:
+- __writeback_single_inode
+ : set I_SYNC
+  - do_writepages
+   - f2fs_write_data_page
+    - f2fs_balance_fs
+     - f2fs_gc
+      - iput
+       - evict
+        - inode_wait_for_writeback(I_SYNC)
+
+In order to avoid this, even though iput is called with the zero-reference
+count, we need to stop the eviction procedure if the inode is on writeback.
+So this patch links f2fs_drop_inode which checks the I_SYNC flag.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c  |  7 +++++--
+ fs/f2fs/namei.c |  6 ++++++
+ fs/f2fs/super.c | 15 +++++++++++++++
+ 3 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index e1b50b3..91ff93b 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -578,6 +578,7 @@ static int f2fs_write_data_pages(struct address_space *mapping,
+ {
+ 	struct inode *inode = mapping->host;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
++	bool locked = false;
+ 	int ret;
+ 	long excess_nrtw = 0, desired_nrtw;
+ 
+@@ -591,10 +592,12 @@ static int f2fs_write_data_pages(struct address_space *mapping,
+ 		wbc->nr_to_write = desired_nrtw;
+ 	}
+ 
+-	if (!S_ISDIR(inode->i_mode))
++	if (!S_ISDIR(inode->i_mode)) {
+ 		mutex_lock(&sbi->writepages);
++		locked = true;
++	}
+ 	ret = write_cache_pages(mapping, wbc, __f2fs_writepage, mapping);
+-	if (!S_ISDIR(inode->i_mode))
++	if (locked)
+ 		mutex_unlock(&sbi->writepages);
+ 	f2fs_submit_bio(sbi, DATA, (wbc->sync_mode == WB_SYNC_ALL));
+ 
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 4aa26e5..47abc97 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -72,6 +72,7 @@ out:
+ 	unlock_new_inode(inode);
+ fail:
+ 	trace_f2fs_new_inode(inode, err);
++	make_bad_inode(inode);
+ 	iput(inode);
+ 	if (nid_free)
+ 		alloc_nid_failed(sbi, ino);
+@@ -155,6 +156,7 @@ static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
+ out:
+ 	clear_nlink(inode);
+ 	unlock_new_inode(inode);
++	make_bad_inode(inode);
+ 	iput(inode);
+ 	alloc_nid_failed(sbi, ino);
+ 	return err;
+@@ -190,6 +192,7 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
+ 	return 0;
+ out:
+ 	clear_inode_flag(F2FS_I(inode), FI_INC_LINK);
++	make_bad_inode(inode);
+ 	iput(inode);
+ 	return err;
+ }
+@@ -295,6 +298,7 @@ static int f2fs_symlink(struct inode *dir, struct dentry *dentry,
+ out:
+ 	clear_nlink(inode);
+ 	unlock_new_inode(inode);
++	make_bad_inode(inode);
+ 	iput(inode);
+ 	alloc_nid_failed(sbi, inode->i_ino);
+ 	return err;
+@@ -335,6 +339,7 @@ out_fail:
+ 	clear_inode_flag(F2FS_I(inode), FI_INC_LINK);
+ 	clear_nlink(inode);
+ 	unlock_new_inode(inode);
++	make_bad_inode(inode);
+ 	iput(inode);
+ 	alloc_nid_failed(sbi, inode->i_ino);
+ 	return err;
+@@ -382,6 +387,7 @@ static int f2fs_mknod(struct inode *dir, struct dentry *dentry,
+ out:
+ 	clear_nlink(inode);
+ 	unlock_new_inode(inode);
++	make_bad_inode(inode);
+ 	iput(inode);
+ 	alloc_nid_failed(sbi, inode->i_ino);
+ 	return err;
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 75521b5..fa168e1 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -98,6 +98,20 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
+ 	return &fi->vfs_inode;
+ }
+ 
++static int f2fs_drop_inode(struct inode *inode)
++{
++	/*
++	 * This is to avoid a deadlock condition like below.
++	 * writeback_single_inode(inode)
++	 *  - f2fs_write_data_page
++	 *    - f2fs_gc -> iput -> evict
++	 *       - inode_wait_for_writeback(inode)
++	 */
++	if (!inode_unhashed(inode) && inode->i_state & I_SYNC)
++		return 0;
++	return generic_drop_inode(inode);
++}
++
+ static void f2fs_i_callback(struct rcu_head *head)
+ {
+ 	struct inode *inode = container_of(head, struct inode, i_rcu);
+@@ -232,6 +246,7 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
+ 
+ static struct super_operations f2fs_sops = {
+ 	.alloc_inode	= f2fs_alloc_inode,
++	.drop_inode	= f2fs_drop_inode,
+ 	.destroy_inode	= f2fs_destroy_inode,
+ 	.write_inode	= f2fs_write_inode,
+ 	.show_options	= f2fs_show_options,
+-- 
+1.8.2.1.422.gdcd8c09
+

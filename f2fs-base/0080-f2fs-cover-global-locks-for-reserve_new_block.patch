@@ -1,0 +1,58 @@
+From 070a4b2cadc41a6742c30df66e243097de8b49f9 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 25 Jan 2013 18:33:41 +0900
+Subject: [PATCH] f2fs: cover global locks for reserve_new_block
+
+The fill_zero() from fallocate() calls get_new_data_page() in which calls
+reserve_new_block().
+The reserve_new_block() should be covered by *DATA_NEW*, one of global locks.
+And also, before getting the lock, we should check free sections by calling
+f2fs_balance_fs().
+
+If we break this rule, f2fs is able to face with out-of-control free space
+management and fall into infinite loop like the following scenario as well.
+
+[f2fs_sync_fs()]             [fallocate()]
+ - write_checkpoint()        - fill_zero()
+  - block_operations()        - get_new_data_page()
+   : grab NODE_NEW             - get_dnode_of_data()
+                                : get locked dirty node page
+    - sync_node_pages()
+                                : try to grab NODE_NEW for data allocation
+     : trylock and skip the dirty node page
+   : call sync_node_pages() repeatedly in order to flush all the dirty node
+     pages!
+
+In order to avoid this, we should grab another global lock such as DATA_NEW
+before calling get_new_data_page() in fill_zero().
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/file.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 3191b52..6cdab2c 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -387,12 +387,17 @@ const struct inode_operations f2fs_file_inode_operations = {
+ static void fill_zero(struct inode *inode, pgoff_t index,
+ 					loff_t start, loff_t len)
+ {
++	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct page *page;
+ 
+ 	if (!len)
+ 		return;
+ 
++	f2fs_balance_fs(sbi);
++
++	mutex_lock_op(sbi, DATA_NEW);
+ 	page = get_new_data_page(inode, index, false);
++	mutex_unlock_op(sbi, DATA_NEW);
+ 
+ 	if (!IS_ERR(page)) {
+ 		wait_on_page_writeback(page);
+-- 
+1.8.2.1.422.gdcd8c09
+

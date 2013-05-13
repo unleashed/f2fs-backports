@@ -1,0 +1,50 @@
+From 8c34df51fd3c988d8daa8df3ac4f688760ff385a Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 11 Jan 2013 14:09:38 +0900
+Subject: [PATCH] f2fs: move f2fs_balance_fs to punch_hole
+
+The f2fs_fallocate() has two operations: punch_hole and expand_size.
+
+Only in the case of punch_hole, dirty node pages can be produced, so let's
+trigger f2fs_balance_fs() in this case only.
+Furthermore, let's trigger it at every data truncation routine.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/file.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 7354c2d..819de7f 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -410,6 +410,8 @@ int truncate_hole(struct inode *inode, pgoff_t pg_start, pgoff_t pg_end)
+ 		struct dnode_of_data dn;
+ 		struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 
++		f2fs_balance_fs(sbi);
++
+ 		mutex_lock_op(sbi, DATA_TRUNC);
+ 		set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 		err = get_dnode_of_data(&dn, index, RDONLY_NODE);
+@@ -537,7 +539,6 @@ static long f2fs_fallocate(struct file *file, int mode,
+ 				loff_t offset, loff_t len)
+ {
+ 	struct inode *inode = file->f_path.dentry->d_inode;
+-	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	long ret;
+ 
+ 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE))
+@@ -552,8 +553,6 @@ static long f2fs_fallocate(struct file *file, int mode,
+ 		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+ 		mark_inode_dirty(inode);
+ 	}
+-
+-	f2fs_balance_fs(sbi);
+ 	return ret;
+ }
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

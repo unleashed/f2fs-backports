@@ -1,0 +1,41 @@
+From 6c0b87e1a3e213eec9d3fa4eb2b267da2701b0e3 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 13 Mar 2013 17:45:15 +0900
+Subject: [PATCH] f2fs: fix to unlock node page when it was truncated
+
+If the node page was truncated, its block address became zero.
+This means that we don't need to write the node page, but have to unlock
+NODE_WRITE, decrease the number of dirty node pages, and then unlock_page
+before returning the f2fs_write_node_page with zero.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index e275218..3dc63f4 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1106,15 +1106,15 @@ static int f2fs_write_node_page(struct page *page,
+ 
+ 	/* This page is already truncated */
+ 	if (ni.blk_addr == NULL_ADDR)
+-		return 0;
++		goto out;
+ 
+ 	set_page_writeback(page);
+ 
+ 	/* insert node offset */
+ 	write_node_page(sbi, page, nid, ni.blk_addr, &new_addr);
+ 	set_node_addr(sbi, &ni, new_addr);
++out:
+ 	dec_page_count(sbi, F2FS_DIRTY_NODES);
+-
+ 	mutex_unlock_op(sbi, NODE_WRITE);
+ 	unlock_page(page);
+ 	return 0;
+-- 
+1.8.2.1.422.gdcd8c09
+

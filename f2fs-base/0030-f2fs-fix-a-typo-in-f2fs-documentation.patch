@@ -1,0 +1,29 @@
+From 7cfa9ddcc7e55c93b5568b10496ba3c13a401003 Mon Sep 17 00:00:00 2001
+From: Huajun Li <huajun.li.lee@gmail.com>
+Date: Wed, 5 Dec 2012 16:45:32 +0800
+Subject: [PATCH] f2fs: fix a typo in f2fs documentation
+
+In f2fs_fs.h, one f2fs inode contains 923 data block pointers, while
+f2fs documentation says it is 929. Fix this inconsistence.
+
+Signed-off-by: Huajun Li <huajun.li.lee@gmail.com>
+---
+ Documentation/filesystems/f2fs.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Documentation/filesystems/f2fs.txt b/Documentation/filesystems/f2fs.txt
+index dee3960..8fbd8b4 100644
+--- a/Documentation/filesystems/f2fs.txt
++++ b/Documentation/filesystems/f2fs.txt
+@@ -253,7 +253,7 @@ Index Structure
+ 
+ The key data structure to manage the data locations is a "node". Similar to
+ traditional file structures, F2FS has three types of node: inode, direct node,
+-indirect node. F2FS assigns 4KB to an inode block which contains 929 data block
++indirect node. F2FS assigns 4KB to an inode block which contains 923 data block
+ indices, two direct node pointers, two indirect node pointers, and one double
+ indirect node pointer as described below. One direct node block contains 1018
+ data blocks, and one indirect node block contains also 1018 node blocks. Thus,
+-- 
+1.8.2.1.422.gdcd8c09
+

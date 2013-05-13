@@ -1,0 +1,33 @@
+From c8c1aca06a719c18891efdd23e7668cdac91fc38 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 1 Dec 2012 10:56:25 +0900
+Subject: [PATCH] f2fs: move error condition for mkdir at proper place
+
+In function f2fs_mkdir, err is being initialized without even checking
+if there was any error in new inode creation. So, instead check the
+inode error and make use of error/return condition.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+---
+ fs/f2fs/namei.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 63efd77..2d720ca 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -287,9 +287,8 @@ static int f2fs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+ 	int err;
+ 
+ 	inode = f2fs_new_inode(dir, S_IFDIR | mode);
+-	err = PTR_ERR(inode);
+ 	if (IS_ERR(inode))
+-		return err;
++		return PTR_ERR(inode);
+ 
+ 	inode->i_op = &f2fs_dir_inode_operations;
+ 	inode->i_fop = &f2fs_dir_operations;
+-- 
+1.8.2.1.422.gdcd8c09
+

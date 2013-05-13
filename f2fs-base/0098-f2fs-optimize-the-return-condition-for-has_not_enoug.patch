@@ -1,0 +1,37 @@
+From e903f4777b66a32e8574227ea75d251ac2a83649 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 2 Feb 2013 23:53:15 +0900
+Subject: [PATCH] f2fs: optimize the return condition for
+ has_not_enough_free_secs
+
+Instead of evaluating the free_sections and then deciding to return
+true/false from that path. We can directly use the evaluation condition
+for returning proper value.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.h | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index a9417b9..458bf5c 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -464,10 +464,8 @@ static inline bool has_not_enough_free_secs(struct f2fs_sb_info *sbi)
+ 	if (sbi->por_doing)
+ 		return false;
+ 
+-	if (free_sections(sbi) <= (node_secs + 2 * dent_secs +
+-						reserved_sections(sbi)))
+-		return true;
+-	return false;
++	return (free_sections(sbi) <= (node_secs + 2 * dent_secs +
++						reserved_sections(sbi)));
+ }
+ 
+ static inline int utilization(struct f2fs_sb_info *sbi)
+-- 
+1.8.2.1.422.gdcd8c09
+

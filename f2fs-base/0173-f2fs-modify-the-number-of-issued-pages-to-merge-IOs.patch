@@ -1,0 +1,102 @@
+From 799945c6303f50335ebc4878f3af0b89d60dc086 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 29 Apr 2013 16:58:39 +0900
+Subject: [PATCH] f2fs: modify the number of issued pages to merge IOs
+
+When testing f2fs on an SSD, I found some 128 page IOs followed by 1 page IO
+were issued by f2fs_write_node_pages.
+This means that there were some mishandling flows which degrades performance.
+
+Previous f2fs_write_node_pages determines the number of pages to be written,
+nr_to_write, as follows.
+
+1. The bio_get_nr_vecs returns 129 pages.
+2. The bio_alloc makes a room for 128 pages.
+3. The initial 128 pages go into one bio.
+4. The existing bio is submitted, and a new bio is prepared for the last 1 page.
+5. Finally, sync_node_pages submits the last 1 page bio.
+
+The problem is from the use of bio_get_nr_vecs, so this patch replace it
+with max_hw_blocks using queue_max_sectors.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c    |  6 ++----
+ fs/f2fs/segment.c |  2 +-
+ fs/f2fs/segment.h | 11 +++++++++++
+ 3 files changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index f14eb7b..7209d63 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1171,7 +1171,6 @@ static int f2fs_write_node_pages(struct address_space *mapping,
+ 			    struct writeback_control *wbc)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(mapping->host->i_sb);
+-	struct block_device *bdev = sbi->sb->s_bdev;
+ 	long nr_to_write = wbc->nr_to_write;
+ 
+ 	/* First check balancing cached NAT entries */
+@@ -1185,10 +1184,9 @@ static int f2fs_write_node_pages(struct address_space *mapping,
+ 		return 0;
+ 
+ 	/* if mounting is failed, skip writing node pages */
+-	wbc->nr_to_write = bio_get_nr_vecs(bdev);
++	wbc->nr_to_write = max_hw_blocks(sbi);
+ 	sync_node_pages(sbi, 0, wbc);
+-	wbc->nr_to_write = nr_to_write -
+-		(bio_get_nr_vecs(bdev) - wbc->nr_to_write);
++	wbc->nr_to_write = nr_to_write - (max_hw_blocks(sbi) - wbc->nr_to_write);
+ 	return 0;
+ }
+ 
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 392ccb3..d8e84e4 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -734,7 +734,7 @@ static void submit_write_page(struct f2fs_sb_info *sbi, struct page *page,
+ 		do_submit_bio(sbi, type, false);
+ alloc_new:
+ 	if (sbi->bio[type] == NULL) {
+-		sbi->bio[type] = f2fs_bio_alloc(bdev, bio_get_nr_vecs(bdev));
++		sbi->bio[type] = f2fs_bio_alloc(bdev, max_hw_blocks(sbi));
+ 		sbi->bio[type]->bi_sector = SECTOR_FROM_BLOCK(sbi, blk_addr);
+ 		/*
+ 		 * The end_io will be assigned at the sumbission phase.
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index 26fc054..062424a 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -8,6 +8,8 @@
+  * it under the terms of the GNU General Public License version 2 as
+  * published by the Free Software Foundation.
+  */
++#include <linux/blkdev.h>
++
+ /* constant macro */
+ #define NULL_SEGNO			((unsigned int)(~0))
+ #define NULL_SECNO			((unsigned int)(~0))
+@@ -86,6 +88,8 @@
+ 
+ #define SECTOR_FROM_BLOCK(sbi, blk_addr)				\
+ 	(blk_addr << ((sbi)->log_blocksize - F2FS_LOG_SECTOR_SIZE))
++#define SECTOR_TO_BLOCK(sbi, sectors)					\
++	(sectors >> ((sbi)->log_blocksize - F2FS_LOG_SECTOR_SIZE))
+ 
+ /* during checkpoint, bio_private is used to synchronize the last bio */
+ struct bio_private {
+@@ -624,3 +628,10 @@ static inline bool sec_usage_check(struct f2fs_sb_info *sbi, unsigned int secno)
+ 		return true;
+ 	return false;
+ }
++
++static inline unsigned int max_hw_blocks(struct f2fs_sb_info *sbi)
++{
++	struct block_device *bdev = sbi->sb->s_bdev;
++	struct request_queue *q = bdev_get_queue(bdev);
++	return SECTOR_TO_BLOCK(sbi, queue_max_sectors(q));
++}
+-- 
+1.8.2.1.422.gdcd8c09
+

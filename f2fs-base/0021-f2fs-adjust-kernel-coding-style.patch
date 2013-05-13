@@ -1,0 +1,624 @@
+From 07611191eb6841b94df7c77de3df5af4bbf0a889 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 29 Nov 2012 13:28:09 +0900
+Subject: [PATCH] f2fs: adjust kernel coding style
+
+As pointed out by Randy Dunlap, this patch removes all usage of "/**" for comment
+blocks. Instead, just use "/*".
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/acl.c        |  2 +-
+ fs/f2fs/acl.h        |  2 +-
+ fs/f2fs/checkpoint.c | 10 +++++-----
+ fs/f2fs/data.c       | 12 ++++++------
+ fs/f2fs/debug.c      |  6 +++---
+ fs/f2fs/dir.c        |  4 ++--
+ fs/f2fs/f2fs.h       |  2 +-
+ fs/f2fs/file.c       |  2 +-
+ fs/f2fs/gc.c         | 10 +++++-----
+ fs/f2fs/gc.h         |  4 ++--
+ fs/f2fs/hash.c       |  2 +-
+ fs/f2fs/inode.c      |  4 ++--
+ fs/f2fs/namei.c      |  4 ++--
+ fs/f2fs/node.c       | 22 +++++++++++-----------
+ fs/f2fs/node.h       |  2 +-
+ fs/f2fs/recovery.c   |  2 +-
+ fs/f2fs/segment.c    | 26 +++++++++++++-------------
+ fs/f2fs/segment.h    |  2 +-
+ fs/f2fs/super.c      |  2 +-
+ fs/f2fs/xattr.c      |  2 +-
+ fs/f2fs/xattr.h      |  4 ++--
+ 21 files changed, 63 insertions(+), 63 deletions(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index dff2a2b..1ac9a4b 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/acl.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/acl.h b/fs/f2fs/acl.h
+index c97675e..80f4306 100644
+--- a/fs/f2fs/acl.h
++++ b/fs/f2fs/acl.h
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/acl.h
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 7c18f8e..6ef36c3 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/checkpoint.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -24,7 +24,7 @@
+ static struct kmem_cache *orphan_entry_slab;
+ static struct kmem_cache *inode_entry_slab;
+ 
+-/**
++/*
+  * We guarantee no failure on the returned page.
+  */
+ struct page *grab_meta_page(struct f2fs_sb_info *sbi, pgoff_t index)
+@@ -44,7 +44,7 @@ repeat:
+ 	return page;
+ }
+ 
+-/**
++/*
+  * We guarantee no failure on the returned page.
+  */
+ struct page *get_meta_page(struct f2fs_sb_info *sbi, pgoff_t index)
+@@ -543,7 +543,7 @@ retry:
+ 	goto retry;
+ }
+ 
+-/**
++/*
+  * Freeze all the FS-operations for checkpoint.
+  */
+ void block_operations(struct f2fs_sb_info *sbi)
+@@ -727,7 +727,7 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, bool is_umount)
+ 	F2FS_RESET_SB_DIRT(sbi);
+ }
+ 
+-/**
++/*
+  * We guarantee that this checkpoint procedure should not fail.
+  */
+ void write_checkpoint(struct f2fs_sb_info *sbi, bool blocked, bool is_umount)
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 5635cc5..444c2a6 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/data.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -21,7 +21,7 @@
+ #include "node.h"
+ #include "segment.h"
+ 
+-/**
++/*
+  * Lock ordering for the change of data block address:
+  * ->data_page
+  *  ->node_page
+@@ -207,7 +207,7 @@ struct page *find_data_page(struct inode *inode, pgoff_t index)
+ 	return page;
+ }
+ 
+-/**
++/*
+  * If it tries to access a hole, return an error.
+  * Because, the callers, functions in dir.c and GC, should be able to know
+  * whether this page exists or not.
+@@ -247,7 +247,7 @@ struct page *get_lock_data_page(struct inode *inode, pgoff_t index)
+ 	return page;
+ }
+ 
+-/**
++/*
+  * Caller ensures that this data page is never allocated.
+  * A new zero-filled data page is allocated in the page cache.
+  */
+@@ -322,7 +322,7 @@ static void read_end_io(struct bio *bio, int err)
+ 	bio_put(bio);
+ }
+ 
+-/**
++/*
+  * Fill the locked page with data located in the block address.
+  * Read operation is synchronous, and caller must unlock the page.
+  */
+@@ -367,7 +367,7 @@ int f2fs_readpage(struct f2fs_sb_info *sbi, struct page *page,
+ 	return 0;
+ }
+ 
+-/**
++/*
+  * This function should be used by the data read flow only where it
+  * does not check the "create" flag that indicates block allocation.
+  * The reason for this special functionality is to exploit VFS readahead
+diff --git a/fs/f2fs/debug.c b/fs/f2fs/debug.c
+index fb62960..0e0380a 100644
+--- a/fs/f2fs/debug.c
++++ b/fs/f2fs/debug.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * f2fs debugging statistics
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -78,7 +78,7 @@ static void update_general_status(struct f2fs_sb_info *sbi)
+ 	}
+ }
+ 
+-/**
++/*
+  * This function calculates BDF of every segments
+  */
+ static void update_sit_info(struct f2fs_sb_info *sbi)
+@@ -113,7 +113,7 @@ static void update_sit_info(struct f2fs_sb_info *sbi)
+ 		si->avg_vblocks = 0;
+ }
+ 
+-/**
++/*
+  * This function calculates memory footprint.
+  */
+ static void update_mem_info(struct f2fs_sb_info *sbi)
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 5ec7a06..089eb67 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/dir.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -453,7 +453,7 @@ fail:
+ 	return err;
+ }
+ 
+-/**
++/*
+  * It only removes the dentry from the dentry page,corresponding name
+  * entry in name page does not need to be touched during deletion.
+  */
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 8d7fde1..8c3f1ef 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/f2fs.h
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index f5ae36d..c1a108f 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/file.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 46774ce..3271be4 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/gc.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -213,7 +213,7 @@ static unsigned int get_gc_cost(struct f2fs_sb_info *sbi, unsigned int segno,
+ 		return get_cb_cost(sbi, segno);
+ }
+ 
+-/**
++/*
+  * This function is called from two pathes.
+  * One is garbage collection and the other is SSR segment selection.
+  * When it is called during GC, it just gets a victim segment
+@@ -359,7 +359,7 @@ static int check_valid_map(struct f2fs_sb_info *sbi,
+ 	return ret ? GC_OK : GC_NEXT;
+ }
+ 
+-/**
++/*
+  * This function compares node address got in summary with that in NAT.
+  * On validity, copy that node with cold status, otherwise (invalid node)
+  * ignore that.
+@@ -425,7 +425,7 @@ next_step:
+ 	return GC_DONE;
+ }
+ 
+-/**
++/*
+  * Calculate start block index that this node page contains
+  */
+ block_t start_bidx_of_node(unsigned int node_ofs)
+@@ -516,7 +516,7 @@ out:
+ 	f2fs_put_page(page, 1);
+ }
+ 
+-/**
++/*
+  * This function tries to get parent node of victim data block, and identifies
+  * data block validity. If the block is valid, copy that with cold status and
+  * modify parent node.
+diff --git a/fs/f2fs/gc.h b/fs/f2fs/gc.h
+index cf42a55..b026d93 100644
+--- a/fs/f2fs/gc.h
++++ b/fs/f2fs/gc.h
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/gc.h
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -42,7 +42,7 @@ struct inode_entry {
+ 	struct inode *inode;
+ };
+ 
+-/**
++/*
+  * inline functions
+  */
+ static inline block_t free_user_blocks(struct f2fs_sb_info *sbi)
+diff --git a/fs/f2fs/hash.c b/fs/f2fs/hash.c
+index beb155e..a60f042 100644
+--- a/fs/f2fs/hash.c
++++ b/fs/f2fs/hash.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/hash.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index 94f13d2..aa4ef4f 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/inode.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -235,7 +235,7 @@ int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
+ 	return 0;
+ }
+ 
+-/**
++/*
+  * Called at the last iput() if i_nlink is zero
+  */
+ void f2fs_evict_inode(struct inode *inode)
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index aec362f..63efd77 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/namei.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -96,7 +96,7 @@ static int is_multimedia_file(const unsigned char *s, const char *sub)
+ 	return ret;
+ }
+ 
+-/**
++/*
+  * Set multimedia files as cold files for hot/cold data separation
+  */
+ static inline void set_cold_file(struct f2fs_sb_info *sbi, struct inode *inode,
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 5d421fe..25d3036 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/node.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -81,7 +81,7 @@ static struct page *get_next_nat_page(struct f2fs_sb_info *sbi, nid_t nid)
+ 	return dst_page;
+ }
+ 
+-/**
++/*
+  * Readahead NAT pages
+  */
+ static void ra_nat_pages(struct f2fs_sb_info *sbi, int nid)
+@@ -251,7 +251,7 @@ static int try_to_free_nats(struct f2fs_sb_info *sbi, int nr_shrink)
+ 	return nr_shrink;
+ }
+ 
+-/**
++/*
+  * This function returns always success
+  */
+ void get_node_info(struct f2fs_sb_info *sbi, nid_t nid, struct node_info *ni)
+@@ -302,7 +302,7 @@ cache:
+ 	cache_nat_entry(NM_I(sbi), nid, &ne);
+ }
+ 
+-/**
++/*
+  * The maximum depth is four.
+  * Offset[0] will have raw inode offset.
+  */
+@@ -649,7 +649,7 @@ fail:
+ 	return err;
+ }
+ 
+-/**
++/*
+  * All the block addresses of data and nodes should be nullified.
+  */
+ int truncate_inode_blocks(struct inode *inode, pgoff_t from)
+@@ -860,7 +860,7 @@ static int read_node_page(struct page *page, int type)
+ 	return f2fs_readpage(sbi, page, ni.blk_addr, type);
+ }
+ 
+-/**
++/*
+  * Readahead a node page
+  */
+ void ra_node_page(struct f2fs_sb_info *sbi, nid_t nid)
+@@ -910,7 +910,7 @@ struct page *get_node_page(struct f2fs_sb_info *sbi, pgoff_t nid)
+ 	return page;
+ }
+ 
+-/**
++/*
+  * Return a locked page for the desired node page.
+  * And, readahead MAX_RA_NODE number of node pages.
+  */
+@@ -1186,7 +1186,7 @@ static int f2fs_release_node_page(struct page *page, gfp_t wait)
+ 	return 0;
+ }
+ 
+-/**
++/*
+  * Structure of the f2fs node operations
+  */
+ const struct address_space_operations f2fs_node_aops = {
+@@ -1386,7 +1386,7 @@ retry:
+ 	return true;
+ }
+ 
+-/**
++/*
+  * alloc_nid() should be called prior to this function.
+  */
+ void alloc_nid_done(struct f2fs_sb_info *sbi, nid_t nid)
+@@ -1403,7 +1403,7 @@ void alloc_nid_done(struct f2fs_sb_info *sbi, nid_t nid)
+ 	spin_unlock(&nm_i->free_nid_list_lock);
+ }
+ 
+-/**
++/*
+  * alloc_nid() should be called prior to this function.
+  */
+ void alloc_nid_failed(struct f2fs_sb_info *sbi, nid_t nid)
+@@ -1545,7 +1545,7 @@ retry:
+ 	return true;
+ }
+ 
+-/**
++/*
+  * This function is called during the checkpointing process.
+  */
+ void flush_nat_entries(struct f2fs_sb_info *sbi)
+diff --git a/fs/f2fs/node.h b/fs/f2fs/node.h
+index 0ab92d6..afdb130 100644
+--- a/fs/f2fs/node.h
++++ b/fs/f2fs/node.h
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/node.h
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 222a7bb..b07e9b6 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/recovery.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index d973c56..a177eb3 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/segment.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -36,7 +36,7 @@ static int need_to_flush(struct f2fs_sb_info *sbi)
+ 	return 0;
+ }
+ 
+-/**
++/*
+  * This function balances dirty node and dentry pages.
+  * In addition, it controls garbage collection.
+  */
+@@ -105,7 +105,7 @@ static void __remove_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno,
+ 	}
+ }
+ 
+-/**
++/*
+  * Should not occur error such as -ENOMEM.
+  * Adding dirty entry into seglist is not critical operation.
+  * If a given segment is one of current working segments, it won't be added.
+@@ -136,7 +136,7 @@ void locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno)
+ 	return;
+ }
+ 
+-/**
++/*
+  * Should call clear_prefree_segments after checkpoint is done.
+  */
+ static void set_prefree_as_free_segments(struct f2fs_sb_info *sbi)
+@@ -269,7 +269,7 @@ void invalidate_blocks(struct f2fs_sb_info *sbi, block_t addr)
+ 	mutex_unlock(&sit_i->sentry_lock);
+ }
+ 
+-/**
++/*
+  * This function should be resided under the curseg_mutex lock
+  */
+ static void __add_sum_entry(struct f2fs_sb_info *sbi, int type,
+@@ -282,7 +282,7 @@ static void __add_sum_entry(struct f2fs_sb_info *sbi, int type,
+ 	return;
+ }
+ 
+-/**
++/*
+  * Calculate the number of current summary pages for writing
+  */
+ int npages_for_summary_flush(struct f2fs_sb_info *sbi)
+@@ -309,7 +309,7 @@ int npages_for_summary_flush(struct f2fs_sb_info *sbi)
+ 	return 3;
+ }
+ 
+-/**
++/*
+  * Caller should put this summary page
+  */
+ struct page *get_sum_page(struct f2fs_sb_info *sbi, unsigned int segno)
+@@ -371,7 +371,7 @@ next:
+ 	return NULL_SEGNO;
+ }
+ 
+-/**
++/*
+  * Find a new segment from the free segments bitmap to right order
+  * This function should be returned with success, otherwise BUG
+  */
+@@ -483,7 +483,7 @@ static void reset_curseg(struct f2fs_sb_info *sbi, int type, int modified)
+ 	__set_sit_entry_type(sbi, type, curseg->segno, modified);
+ }
+ 
+-/**
++/*
+  * Allocate a current working segment.
+  * This function always allocates a free segment in LFS manner.
+  */
+@@ -520,7 +520,7 @@ static void __next_free_blkoff(struct f2fs_sb_info *sbi,
+ 	seg->next_blkoff = ofs;
+ }
+ 
+-/**
++/*
+  * If a segment is written by LFS manner, next block offset is just obtained
+  * by increasing the current block offset. However, if a segment is written by
+  * SSR manner, next block offset obtained by calling __next_free_blkoff
+@@ -534,7 +534,7 @@ static void __refresh_next_blkoff(struct f2fs_sb_info *sbi,
+ 		seg->next_blkoff++;
+ }
+ 
+-/**
++/*
+  * This function always allocates a used segment (from dirty seglist) by SSR
+  * manner, so it should recover the existing segment information of valid blocks
+  */
+@@ -1310,7 +1310,7 @@ static bool flush_sits_in_journal(struct f2fs_sb_info *sbi)
+ 	return 0;
+ }
+ 
+-/**
++/*
+  * CP calls this function, which flushes SIT entries including sit_journal,
+  * and moves prefree segs to free segs.
+  */
+@@ -1624,7 +1624,7 @@ static int build_dirty_segmap(struct f2fs_sb_info *sbi)
+ 	return init_victim_segmap(sbi);
+ }
+ 
+-/**
++/*
+  * Update min, max modified time for cost-benefit GC algorithm
+  */
+ static void init_min_max_mtime(struct f2fs_sb_info *sbi)
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index e380a8e..2c445f8 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/segment.h
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 878bf38..4360600 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/super.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/xattr.c b/fs/f2fs/xattr.c
+index aca50fe..5324d1e 100644
+--- a/fs/f2fs/xattr.c
++++ b/fs/f2fs/xattr.c
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/xattr.c
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+diff --git a/fs/f2fs/xattr.h b/fs/f2fs/xattr.h
+index 29b0a08..49c9558 100644
+--- a/fs/f2fs/xattr.h
++++ b/fs/f2fs/xattr.h
+@@ -1,4 +1,4 @@
+-/**
++/*
+  * fs/f2fs/xattr.h
+  *
+  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+@@ -77,7 +77,7 @@ struct f2fs_xattr_entry {
+ #define MAX_VALUE_LEN	(MIN_OFFSET - sizeof(struct f2fs_xattr_header) - \
+ 			sizeof(struct f2fs_xattr_entry))
+ 
+-/**
++/*
+  * On-disk structure of f2fs_xattr
+  * We use only 1 block for xattr.
+  *
+-- 
+1.8.2.1.422.gdcd8c09
+

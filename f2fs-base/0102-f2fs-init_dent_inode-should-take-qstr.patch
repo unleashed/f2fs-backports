@@ -1,0 +1,81 @@
+From dbcc05b99f247a93d0920f4ddec844a5326bc0bc Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Fri, 25 Jan 2013 16:01:21 -0500
+Subject: [PATCH] f2fs: init_dent_inode() should take qstr
+
+for one thing, it doesn't (and shouldn't) use anything else from dentry;
+for another, on some call chains the dentry is fake and should
+be eliminated completely.
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+---
+ fs/f2fs/dir.c  | 10 +++++-----
+ fs/f2fs/f2fs.h |  2 +-
+ fs/f2fs/node.c |  2 +-
+ 3 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 989980e..a9715ca 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -265,7 +265,7 @@ void f2fs_set_link(struct inode *dir, struct f2fs_dir_entry *de,
+ 	mutex_unlock_op(sbi, DENTRY_OPS);
+ }
+ 
+-void init_dent_inode(struct dentry *dentry, struct page *ipage)
++void init_dent_inode(const struct qstr *name, struct page *ipage)
+ {
+ 	struct f2fs_node *rn;
+ 
+@@ -274,10 +274,10 @@ void init_dent_inode(struct dentry *dentry, struct page *ipage)
+ 
+ 	wait_on_page_writeback(ipage);
+ 
+-	/* copy dentry info. to this inode page */
++	/* copy name info. to this inode page */
+ 	rn = (struct f2fs_node *)page_address(ipage);
+-	rn->i.i_namelen = cpu_to_le32(dentry->d_name.len);
+-	memcpy(rn->i.i_name, dentry->d_name.name, dentry->d_name.len);
++	rn->i.i_namelen = cpu_to_le32(name->len);
++	memcpy(rn->i.i_name, name->name, name->len);
+ 	set_page_dirty(ipage);
+ }
+ 
+@@ -310,7 +310,7 @@ static int init_inode_metadata(struct inode *inode, struct dentry *dentry)
+ 		if (IS_ERR(ipage))
+ 			return PTR_ERR(ipage);
+ 		set_cold_node(inode, ipage);
+-		init_dent_inode(dentry, ipage);
++		init_dent_inode(&dentry->d_name, ipage);
+ 		f2fs_put_page(ipage, 1);
+ 	}
+ 	if (is_inode_flag_set(F2FS_I(inode), FI_INC_LINK)) {
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index c3462b6..3298b59 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -889,7 +889,7 @@ struct f2fs_dir_entry *f2fs_parent_dir(struct inode *, struct page **);
+ ino_t f2fs_inode_by_name(struct inode *, struct qstr *);
+ void f2fs_set_link(struct inode *, struct f2fs_dir_entry *,
+ 				struct page *, struct inode *);
+-void init_dent_inode(struct dentry *, struct page *);
++void init_dent_inode(const struct qstr *, struct page *);
+ int f2fs_add_link(struct dentry *, struct inode *);
+ void f2fs_delete_entry(struct f2fs_dir_entry *, struct page *, struct inode *);
+ int f2fs_make_empty(struct inode *, struct inode *);
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 43ce164..145cd16 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -790,7 +790,7 @@ int new_inode_page(struct inode *inode, struct dentry *dentry)
+ 	set_new_dnode(&dn, inode, NULL, NULL, inode->i_ino);
+ 	mutex_lock_op(sbi, NODE_NEW);
+ 	page = new_node_page(&dn, 0);
+-	init_dent_inode(dentry, page);
++	init_dent_inode(&dentry->d_name, page);
+ 	mutex_unlock_op(sbi, NODE_NEW);
+ 	if (IS_ERR(page))
+ 		return PTR_ERR(page);
+-- 
+1.8.2.1.422.gdcd8c09
+

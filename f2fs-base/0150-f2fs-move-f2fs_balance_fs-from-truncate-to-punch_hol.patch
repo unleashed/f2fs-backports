@@ -1,0 +1,60 @@
+From ad12cec76cdc98dd9a4a3a2afba3bc11e06fef50 Mon Sep 17 00:00:00 2001
+From: Jason Hrycay <jason.hrycay@motorola.com>
+Date: Mon, 8 Apr 2013 20:16:44 -0500
+Subject: [PATCH] f2fs: move f2fs_balance_fs from truncate to punch_hole
+
+Move the f2fs_balance_fs out of the truncate_hole function and only
+perform that in punch_hole use case.  The commit:
+
+  ed60b1644e7f7e5dd67d21caf7e4425dff05dad0
+
+intended to do this but moved it into truncate_hole to cover more
+cases.  However, a deadlock scenario is possible when deleting an inode
+entry under specific conditions:
+
+ f2fs_delete_entry()
+     mutex_lock_op(sbi, DENTRY_OPS);
+     truncate_hole()
+         f2fs_balance_fs()
+             mutex_lock(&sbi->gc_mutex);
+             f2fs_gc()
+                 write_checkpoint()
+                     block_operations()
+                         mutex_lock_op(sbi, DENTRY_OPS);
+
+Lets move it into the punch_hole case to cover the original intent of
+avoiding it during fallocate's expand_inode_data case.
+
+Change-Id: I29f8ea1056b0b88b70ba8652d901b6e8431bb27e
+Signed-off-by: Jason Hrycay <jason.hrycay@motorola.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/file.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index ac8cbb2..5a67a07 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -390,8 +390,6 @@ int truncate_hole(struct inode *inode, pgoff_t pg_start, pgoff_t pg_end)
+ 		struct dnode_of_data dn;
+ 		struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 
+-		f2fs_balance_fs(sbi);
+-
+ 		mutex_lock_op(sbi, DATA_TRUNC);
+ 		set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 		err = get_dnode_of_data(&dn, index, LOOKUP_NODE);
+@@ -435,6 +433,9 @@ static int punch_hole(struct inode *inode, loff_t offset, loff_t len, int mode)
+ 		if (pg_start < pg_end) {
+ 			struct address_space *mapping = inode->i_mapping;
+ 			loff_t blk_start, blk_end;
++			struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
++
++			f2fs_balance_fs(sbi);
+ 
+ 			blk_start = pg_start << PAGE_CACHE_SHIFT;
+ 			blk_end = pg_end << PAGE_CACHE_SHIFT;
+-- 
+1.8.2.1.422.gdcd8c09
+

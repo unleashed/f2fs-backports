@@ -1,0 +1,29 @@
+From cf4c0558008061c66be651628124c54f763f37d4 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 1 Dec 2012 10:55:45 +0900
+Subject: [PATCH] f2fs: remove unneeded memset from init_once
+
+Since, __GFP_ZERO is used while f2fs inode allocation, so we do not
+need memset for f2fs_inode_info, as this is already zeroed out.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+---
+ fs/f2fs/super.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 5830e53..1386732 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -57,7 +57,6 @@ static void init_once(void *foo)
+ {
+ 	struct f2fs_inode_info *fi = (struct f2fs_inode_info *) foo;
+ 
+-	memset(fi, 0, sizeof(*fi));
+ 	inode_init_once(&fi->vfs_inode);
+ }
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

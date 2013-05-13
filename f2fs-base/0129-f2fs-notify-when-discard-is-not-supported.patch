@@ -1,0 +1,45 @@
+From 624e9e8cb85a345661eebc18305abeae6b884ad6 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sun, 17 Mar 2013 17:26:14 +0900
+Subject: [PATCH] f2fs: notify when discard is not supported
+
+Change f2fs so that a warning is emitted when an attempt is made to
+mount a filesystem with the unsupported discard option.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/super.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 8059ffc..2b380e1 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -21,6 +21,7 @@
+ #include <linux/seq_file.h>
+ #include <linux/random.h>
+ #include <linux/exportfs.h>
++#include <linux/blkdev.h>
+ #include <linux/f2fs_fs.h>
+ 
+ #include "f2fs.h"
+@@ -650,6 +651,14 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 	if (err)
+ 		goto fail;
+ 
++	if (test_opt(sbi, DISCARD)) {
++		struct request_queue *q = bdev_get_queue(sb->s_bdev);
++		if (!blk_queue_discard(q))
++			f2fs_msg(sb, KERN_WARNING,
++					"mounting with \"discard\" option, but "
++					"the device does not support discard");
++	}
++
+ 	return 0;
+ fail:
+ 	stop_gc_thread(sbi);
+-- 
+1.8.2.1.422.gdcd8c09
+

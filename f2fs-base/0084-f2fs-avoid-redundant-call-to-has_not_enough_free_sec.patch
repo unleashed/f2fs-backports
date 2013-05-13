@@ -1,0 +1,37 @@
+From 7d2d721a89b0e6a54bf4f2540da14121b1693505 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Wed, 30 Jan 2013 22:47:02 +0900
+Subject: [PATCH] f2fs: avoid redundant call to has_not_enough_free_secs in
+ f2fs_gc
+
+After doing a write_checkpoint from garbage collection path if there is still
+need to do more garbage collection, gc_more label is used to jump and start
+the process again. And in that process, first step before getting victim is to
+check if there are not enough free sections, which is already done before
+doing a jump to gc_more. We can avoid the redundant call to check free
+sections, by checking the gc_type flag which will remain FG_GC(value 1) under
+this condition.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 9b5d0aa..fb03be6 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -672,7 +672,7 @@ gc_more:
+ 	if (!(sbi->sb->s_flags & MS_ACTIVE))
+ 		goto stop;
+ 
+-	if (has_not_enough_free_secs(sbi))
++	if (gc_type == BG_GC && has_not_enough_free_secs(sbi))
+ 		gc_type = FG_GC;
+ 
+ 	if (!__get_victim(sbi, &segno, gc_type, NO_CHECK_TYPE))
+-- 
+1.8.2.1.422.gdcd8c09
+

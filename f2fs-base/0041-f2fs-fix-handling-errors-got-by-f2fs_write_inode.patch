@@ -1,0 +1,114 @@
+From b7a9ef5c682a708d4d0a9b0623c8345bcd791c25 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 19 Dec 2012 15:28:39 +0900
+Subject: [PATCH] f2fs: fix handling errors got by f2fs_write_inode
+
+Ruslan reported that f2fs hangs with an infinite loop in f2fs_sync_file():
+
+	while (sync_node_pages(sbi, inode->i_ino, &wbc) == 0)
+		f2fs_write_inode(inode, NULL);
+
+The reason was revealed that the cold flag is not set even thought this inode is
+a normal file. Therefore, sync_node_pages() skips to write node blocks since it
+only writes cold node blocks.
+
+The cold flag is stored to the node_footer in node block, and whenever a new
+node page is allocated, it is set according to its file type, file or directory.
+
+But, after sudden-power-off, when recovering the inode page, f2fs doesn't recover
+its cold flag.
+
+So, let's assign the cold flag in more right places.
+
+One more thing:
+If f2fs_write_inode() returns an error due to whatever situations, there would
+be no dirty node pages so that sync_node_pages() returns zero.
+(i.e., zero means nothing was written.)
+
+Reported-by: Ruslan N. Marchenko <me@ruff.mobi>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/dir.c   |  2 ++
+ fs/f2fs/file.c  | 10 ++++++----
+ fs/f2fs/inode.c |  1 +
+ fs/f2fs/node.c  |  2 +-
+ 4 files changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index e1f66df..4a78d6c 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -11,6 +11,7 @@
+ #include <linux/fs.h>
+ #include <linux/f2fs_fs.h>
+ #include "f2fs.h"
++#include "node.h"
+ #include "acl.h"
+ 
+ static unsigned long dir_blocks(struct inode *inode)
+@@ -308,6 +309,7 @@ static int init_inode_metadata(struct inode *inode, struct dentry *dentry)
+ 		ipage = get_node_page(F2FS_SB(dir->i_sb), inode->i_ino);
+ 		if (IS_ERR(ipage))
+ 			return PTR_ERR(ipage);
++		set_cold_node(inode, ipage);
+ 		init_dent_inode(dentry, ipage);
+ 		f2fs_put_page(ipage, 1);
+ 	}
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index f9e085d..7f9ea92 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -160,15 +160,17 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 	if (need_to_sync_dir(sbi, inode))
+ 		need_cp = true;
+ 
+-	f2fs_write_inode(inode, NULL);
+-
+ 	if (need_cp) {
+ 		/* all the dirty node pages should be flushed for POR */
+ 		ret = f2fs_sync_fs(inode->i_sb, 1);
+ 		clear_inode_flag(F2FS_I(inode), FI_NEED_CP);
+ 	} else {
+-		while (sync_node_pages(sbi, inode->i_ino, &wbc) == 0)
+-			f2fs_write_inode(inode, NULL);
++		/* if there is no written node page, write its inode page */
++		while (!sync_node_pages(sbi, inode->i_ino, &wbc)) {
++			ret = f2fs_write_inode(inode, NULL);
++			if (ret)
++				goto out;
++		}
+ 		filemap_fdatawait_range(sbi->node_inode->i_mapping,
+ 							0, LONG_MAX);
+ 	}
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index df5fb38..bf20b4d 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -203,6 +203,7 @@ void update_inode(struct inode *inode, struct page *node_page)
+ 	ri->i_flags = cpu_to_le32(F2FS_I(inode)->i_flags);
+ 	ri->i_pino = cpu_to_le32(F2FS_I(inode)->i_pino);
+ 	ri->i_generation = cpu_to_le32(inode->i_generation);
++	set_cold_node(inode, node_page);
+ 	set_page_dirty(node_page);
+ }
+ 
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 1987036..dffac1c 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -834,11 +834,11 @@ struct page *new_node_page(struct dnode_of_data *dn, unsigned int ofs)
+ 		goto fail;
+ 	}
+ 	set_node_addr(sbi, &new_ni, NEW_ADDR);
++	set_cold_node(dn->inode, page);
+ 
+ 	dn->node_page = page;
+ 	sync_inode_page(dn);
+ 	set_page_dirty(page);
+-	set_cold_node(dn->inode, page);
+ 	if (ofs == 0)
+ 		inc_valid_inode_count(sbi);
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

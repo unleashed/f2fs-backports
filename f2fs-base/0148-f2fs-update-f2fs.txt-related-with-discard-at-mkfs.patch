@@ -1,0 +1,39 @@
+From bd6d4731f056be89d01e78b53bf5fdcbdbf0c215 Mon Sep 17 00:00:00 2001
+From: Changman Lee <cm224.lee@samsung.com>
+Date: Wed, 3 Apr 2013 15:26:49 +0900
+Subject: [PATCH] f2fs: update f2fs.txt related with discard at mkfs
+
+ o mkfs.f2fs supports no discard option.
+ o fixed volume label size in 512 bytes.
+
+Signed-off-by: Changman Lee <cm224.lee@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ Documentation/filesystems/f2fs.txt | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/filesystems/f2fs.txt b/Documentation/filesystems/f2fs.txt
+index dcf338e..bd3c56c 100644
+--- a/Documentation/filesystems/f2fs.txt
++++ b/Documentation/filesystems/f2fs.txt
+@@ -146,7 +146,7 @@ USAGE
+ 
+ Format options
+ --------------
+--l [label]   : Give a volume label, up to 256 unicode name.
++-l [label]   : Give a volume label, up to 512 unicode name.
+ -a [0 or 1]  : Split start location of each area for heap-based allocation.
+                1 is set by default, which performs this.
+ -o [int]     : Set overprovision ratio in percent over volume size.
+@@ -156,6 +156,8 @@ Format options
+ -z [int]     : Set the number of sections per zone.
+                1 is set by default.
+ -e [str]     : Set basic extension list. e.g. "mp3,gif,mov"
++-t [0 or 1]  : Disable discard command or not.
++               1 is set by default, which conducts discard.
+ 
+ ================================================================================
+ DESIGN
+-- 
+1.8.2.1.422.gdcd8c09
+

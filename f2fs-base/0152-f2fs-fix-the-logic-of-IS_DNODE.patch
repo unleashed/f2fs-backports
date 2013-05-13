@@ -1,0 +1,29 @@
+From 1a3acf1993e451aea26b8e89f2057b1292081cbd Mon Sep 17 00:00:00 2001
+From: Zhihui Zhang <zzhsuny@gmail.com>
+Date: Sun, 7 Apr 2013 12:57:04 -0400
+Subject: [PATCH] f2fs: fix the logic of IS_DNODE()
+
+If (ofs % (NIDS_PER_BLOCK + 1) == 0), the node is an indirect node block.
+
+Signed-off-by: Zhihui Zhang <zzhsuny@gmail.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/node.h b/fs/f2fs/node.h
+index 271a61c..0a2d72f 100644
+--- a/fs/f2fs/node.h
++++ b/fs/f2fs/node.h
+@@ -242,7 +242,7 @@ static inline bool IS_DNODE(struct page *node_page)
+ 		return false;
+ 	if (ofs >= 6 + 2 * NIDS_PER_BLOCK) {
+ 		ofs -= 6 + 2 * NIDS_PER_BLOCK;
+-		if ((long int)ofs % (NIDS_PER_BLOCK + 1))
++		if (!((long int)ofs % (NIDS_PER_BLOCK + 1)))
+ 			return false;
+ 	}
+ 	return true;
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,32 @@
+From fff9bb873c1726b7c79fb4b497af23c37eab2af8 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 22 Dec 2012 12:09:58 +0900
+Subject: [PATCH] f2fs: remove unneeded initialization of nr_dirty in
+ dirty_seglist_info
+
+Since, the memory for the object of dirty_seglist_info is allocated
+using kzalloc - which returns zeroed out memory. So, there is no need
+to initialize the nr_dirty values with zeroes.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 66f5e82..de62409 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -1575,7 +1575,6 @@ static int build_dirty_segmap(struct f2fs_sb_info *sbi)
+ 
+ 	for (i = 0; i < NR_DIRTY_TYPE; i++) {
+ 		dirty_i->dirty_segmap[i] = kzalloc(bitmap_size, GFP_KERNEL);
+-		dirty_i->nr_dirty[i] = 0;
+ 		if (!dirty_i->dirty_segmap[i])
+ 			return -ENOMEM;
+ 	}
+-- 
+1.8.2.1.422.gdcd8c09
+

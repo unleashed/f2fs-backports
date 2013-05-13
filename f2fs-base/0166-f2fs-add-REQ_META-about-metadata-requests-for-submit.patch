@@ -1,0 +1,36 @@
+From 2d9fcb751509d10a002e9d0d584d31478c389ab2 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Thu, 25 Apr 2013 11:45:21 +0900
+Subject: [PATCH] f2fs: add REQ_META about metadata requests for submit
+
+Adding REQ_META for all the metadata requests can help in improving the
+FS performance, if the underlying device supports TAGGING.
+So, when considering the submit_bio path for all the f2fs requests. We can
+add REQ_META for all the META requests.
+As a precursor to this change we considered the commit
+4265900e0be653f5b78baf2816857ef57cf1332f 'mmc: MMC-4.5 Data Tag Support'
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 0a65284..392ccb3 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -688,6 +688,9 @@ static void do_submit_bio(struct f2fs_sb_info *sbi,
+ 	if (type >= META_FLUSH)
+ 		rw = WRITE_FLUSH_FUA;
+ 
++	if (btype == META)
++		rw |= REQ_META;
++
+ 	if (sbi->bio[btype]) {
+ 		struct bio_private *p = sbi->bio[btype]->bi_private;
+ 		p->sbi = sbi;
+-- 
+1.8.2.1.422.gdcd8c09
+

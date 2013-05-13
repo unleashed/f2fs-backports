@@ -1,0 +1,63 @@
+From a5a7bb0bb45833d646c22d1cbaf63333f0ea28c8 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Fri, 25 Jan 2013 16:04:58 -0500
+Subject: [PATCH] f2fs: switch new_inode_page() from dentry to qstr
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+---
+ fs/f2fs/dir.c  | 2 +-
+ fs/f2fs/f2fs.h | 2 +-
+ fs/f2fs/node.c | 4 ++--
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index a9715ca..b733e2b 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -287,7 +287,7 @@ static int init_inode_metadata(struct inode *inode, struct dentry *dentry)
+ 
+ 	if (is_inode_flag_set(F2FS_I(inode), FI_NEW_INODE)) {
+ 		int err;
+-		err = new_inode_page(inode, dentry);
++		err = new_inode_page(inode, &dentry->d_name);
+ 		if (err)
+ 			return err;
+ 
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 3298b59..88e8e0f 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -918,7 +918,7 @@ void get_node_info(struct f2fs_sb_info *, nid_t, struct node_info *);
+ int get_dnode_of_data(struct dnode_of_data *, pgoff_t, int);
+ int truncate_inode_blocks(struct inode *, pgoff_t);
+ int remove_inode_page(struct inode *);
+-int new_inode_page(struct inode *, struct dentry *);
++int new_inode_page(struct inode *, const struct qstr *);
+ struct page *new_node_page(struct dnode_of_data *, unsigned int);
+ void ra_node_page(struct f2fs_sb_info *, nid_t);
+ struct page *get_node_page(struct f2fs_sb_info *, pgoff_t);
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 145cd16..0da252c 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -780,7 +780,7 @@ int remove_inode_page(struct inode *inode)
+ 	return 0;
+ }
+ 
+-int new_inode_page(struct inode *inode, struct dentry *dentry)
++int new_inode_page(struct inode *inode, const struct qstr *name)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct page *page;
+@@ -790,7 +790,7 @@ int new_inode_page(struct inode *inode, struct dentry *dentry)
+ 	set_new_dnode(&dn, inode, NULL, NULL, inode->i_ino);
+ 	mutex_lock_op(sbi, NODE_NEW);
+ 	page = new_node_page(&dn, 0);
+-	init_dent_inode(&dentry->d_name, page);
++	init_dent_inode(name, page);
+ 	mutex_unlock_op(sbi, NODE_NEW);
+ 	if (IS_ERR(page))
+ 		return PTR_ERR(page);
+-- 
+1.8.2.1.422.gdcd8c09
+

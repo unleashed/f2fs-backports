@@ -1,0 +1,35 @@
+From 622efc04ffbbb20fb887d18668e1f3e05b41760b Mon Sep 17 00:00:00 2001
+From: majianpeng <majianpeng@gmail.com>
+Date: Fri, 1 Feb 2013 15:00:30 +0800
+Subject: [PATCH] f2fs: add device name in debugfs
+
+In file status, it can't distinguish between different devices.
+So add device name to do this function.
+
+Signed-off-by: Jianpeng Ma <majianpeng@gmail.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/debug.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/debug.c b/fs/f2fs/debug.c
+index c8c3730..025b9e2 100644
+--- a/fs/f2fs/debug.c
++++ b/fs/f2fs/debug.c
+@@ -183,10 +183,12 @@ static int stat_show(struct seq_file *s, void *v)
+ 
+ 	mutex_lock(&f2fs_stat_mutex);
+ 	list_for_each_entry_safe(si, next, &f2fs_stat_list, stat_list) {
++		char devname[BDEVNAME_SIZE];
+ 
+ 		update_general_status(si->sbi);
+ 
+-		seq_printf(s, "\n=====[ partition info. #%d ]=====\n", i++);
++		seq_printf(s, "\n=====[ partition info(%s). #%d ]=====\n",
++			bdevname(si->sbi->sb->s_bdev, devname), i++);
+ 		seq_printf(s, "[SB: 1] [CP: 2] [SIT: %d] [NAT: %d] ",
+ 			   si->sit_area_segs, si->nat_area_segs);
+ 		seq_printf(s, "[SSA: %d] [MAIN: %d",
+-- 
+1.8.2.1.422.gdcd8c09
+

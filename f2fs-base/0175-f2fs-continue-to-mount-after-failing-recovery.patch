@@ -1,0 +1,39 @@
+From 975f44bc5c6def3506f697052c5951129631f301 Mon Sep 17 00:00:00 2001
+From: Chris Fries <C.Fries@motorola.com>
+Date: Thu, 2 May 2013 16:07:34 -0500
+Subject: [PATCH] f2fs: continue to mount after failing recovery
+
+When unable to roll forward the journal, we shouldn't bail out and
+not mount, we should continue to attempt the mount.  Bad recovery data
+is likely unrecoverable at this point, and requiring the user to try
+to mount again doesn't solve any issues.
+
+Signed-off-by: Chris Fries <C.Fries@motorola.com>
+Reviewed-by: Russell Knize <rknize2@motorola.com>
+Reviewed-by: Jason Hrycay <jason.hrycay@motorola.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/super.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index fa168e1..8555f7d 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -669,10 +669,9 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 	/* recover fsynced data */
+ 	if (!test_opt(sbi, DISABLE_ROLL_FORWARD)) {
+ 		err = recover_fsync_data(sbi);
+-		if (err) {
+-			f2fs_msg(sb, KERN_ERR, "Failed to recover fsync data");
+-			goto free_root_inode;
+-		}
++		if (err)
++			f2fs_msg(sb, KERN_ERR,
++				"Cannot recover all fsync data errno=%ld", err);
+ 	}
+ 
+ 	/* After POR, we can run background GC thread */
+-- 
+1.8.2.1.422.gdcd8c09
+

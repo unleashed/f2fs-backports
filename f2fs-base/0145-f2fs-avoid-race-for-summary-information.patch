@@ -1,0 +1,78 @@
+From 0fd09f24d7b50ac4e40b0a9d695859921560932a Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 1 Apr 2013 08:32:21 +0900
+Subject: [PATCH] f2fs: avoid race for summary information
+
+In order to do GC more reliably, I'd like to lock the vicitm summary page
+until its GC is completed, and also prevent any checkpoint process.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c    | 8 +-------
+ fs/f2fs/node.c  | 2 +-
+ fs/f2fs/super.c | 7 +++++--
+ 3 files changed, 7 insertions(+), 10 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 136c0f7..e97f301 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -642,12 +642,6 @@ static void do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
+ 	if (IS_ERR(sum_page))
+ 		return;
+ 
+-	/*
+-	 * CP needs to lock sum_page. In this time, we don't need
+-	 * to lock this page, because this summary page is not gone anywhere.
+-	 * Also, this page is not gonna be updated before GC is done.
+-	 */
+-	unlock_page(sum_page);
+ 	sum = page_address(sum_page);
+ 
+ 	switch (GET_SUM_TYPE((&sum->footer))) {
+@@ -661,7 +655,7 @@ static void do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
+ 	stat_inc_seg_count(sbi, GET_SUM_TYPE((&sum->footer)));
+ 	stat_inc_call_count(sbi->stat_info);
+ 
+-	f2fs_put_page(sum_page, 0);
++	f2fs_put_page(sum_page, 1);
+ }
+ 
+ int f2fs_gc(struct f2fs_sb_info *sbi)
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 8510c5e..95298ef 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1149,7 +1149,7 @@ static int f2fs_write_node_pages(struct address_space *mapping,
+ 
+ 	/* First check balancing cached NAT entries */
+ 	if (try_to_free_nats(sbi, NAT_ENTRY_PER_BLOCK)) {
+-		write_checkpoint(sbi, false);
++		f2fs_sync_fs(sbi->sb, true);
+ 		return 0;
+ 	}
+ 
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index d16505a..d2328e8 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -137,10 +137,13 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
+ 	if (!sbi->s_dirty && !get_pages(sbi, F2FS_DIRTY_NODES))
+ 		return 0;
+ 
+-	if (sync)
++	if (sync) {
++		mutex_lock(&sbi->gc_mutex);
+ 		write_checkpoint(sbi, false);
+-	else
++		mutex_unlock(&sbi->gc_mutex);
++	} else {
+ 		f2fs_balance_fs(sbi);
++	}
+ 
+ 	return 0;
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

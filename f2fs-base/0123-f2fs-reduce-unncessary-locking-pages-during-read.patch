@@ -1,0 +1,415 @@
+From ebbffbaa81ecf7a0ba530bb8e5472d343ee3faef Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 8 Mar 2013 21:29:23 +0900
+Subject: [PATCH] f2fs: reduce unncessary locking pages during read
+
+This patch reduces redundant locking and unlocking pages during read operations.
+In f2fs_readpage, let's use wait_on_page_locked() instead of lock_page.
+And then, when we need to modify any data finally, let's lock the page so that
+we can avoid lock contention.
+
+[readpage rule]
+- The f2fs_readpage returns unlocked page, or released page too in error cases.
+- Its caller should handle read error, -EIO, after locking the page, which
+  indicates read completion.
+- Its caller should check PageUptodate after grab_cache_page.
+
+Signed-off-by: Changman Lee <cm224.lee@samsung.com>
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 12 ++++++-----
+ fs/f2fs/data.c       | 58 +++++++++++++++++++++++++++-------------------------
+ fs/f2fs/node.c       | 58 +++++++++++++++++++++++++++++++---------------------
+ fs/f2fs/recovery.c   | 31 +++++++++++++++++-----------
+ 4 files changed, 91 insertions(+), 68 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 2b6fc13..d947e66 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -57,13 +57,15 @@ repeat:
+ 		cond_resched();
+ 		goto repeat;
+ 	}
+-	if (f2fs_readpage(sbi, page, index, READ_SYNC)) {
+-		f2fs_put_page(page, 1);
++	if (PageUptodate(page))
++		goto out;
++
++	if (f2fs_readpage(sbi, page, index, READ_SYNC))
+ 		goto repeat;
+-	}
+-	mark_page_accessed(page);
+ 
+-	/* We do not allow returning an errorneous page */
++	lock_page(page);
++out:
++	mark_page_accessed(page);
+ 	return page;
+ }
+ 
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 02ad450..3549ab4 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -200,12 +200,17 @@ struct page *find_data_page(struct inode *inode, pgoff_t index)
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+ 
++	if (PageUptodate(page)) {
++		unlock_page(page);
++		return page;
++	}
++
+ 	err = f2fs_readpage(sbi, page, dn.data_blkaddr, READ_SYNC);
+-	if (err) {
+-		f2fs_put_page(page, 1);
+-		return ERR_PTR(err);
++	wait_on_page_locked(page);
++	if (!PageUptodate(page)) {
++		f2fs_put_page(page, 0);
++		return ERR_PTR(-EIO);
+ 	}
+-	unlock_page(page);
+ 	return page;
+ }
+ 
+@@ -242,9 +247,13 @@ struct page *get_lock_data_page(struct inode *inode, pgoff_t index)
+ 	BUG_ON(dn.data_blkaddr == NULL_ADDR);
+ 
+ 	err = f2fs_readpage(sbi, page, dn.data_blkaddr, READ_SYNC);
+-	if (err) {
+-		f2fs_put_page(page, 1);
++	if (err)
+ 		return ERR_PTR(err);
++
++	lock_page(page);
++	if (!PageUptodate(page)) {
++		f2fs_put_page(page, 1);
++		return ERR_PTR(-EIO);
+ 	}
+ 	return page;
+ }
+@@ -284,14 +293,17 @@ struct page *get_new_data_page(struct inode *inode, pgoff_t index,
+ 
+ 	if (dn.data_blkaddr == NEW_ADDR) {
+ 		zero_user_segment(page, 0, PAGE_CACHE_SIZE);
++		SetPageUptodate(page);
+ 	} else {
+ 		err = f2fs_readpage(sbi, page, dn.data_blkaddr, READ_SYNC);
+-		if (err) {
+-			f2fs_put_page(page, 1);
++		if (err)
+ 			return ERR_PTR(err);
++		lock_page(page);
++		if (!PageUptodate(page)) {
++			f2fs_put_page(page, 1);
++			return ERR_PTR(-EIO);
+ 		}
+ 	}
+-	SetPageUptodate(page);
+ 
+ 	if (new_i_size &&
+ 		i_size_read(inode) < ((index + 1) << PAGE_CACHE_SHIFT)) {
+@@ -326,22 +338,14 @@ static void read_end_io(struct bio *bio, int err)
+ 
+ /*
+  * Fill the locked page with data located in the block address.
+- * Read operation is synchronous, and caller must unlock the page.
++ * Return unlocked page.
+  */
+ int f2fs_readpage(struct f2fs_sb_info *sbi, struct page *page,
+ 					block_t blk_addr, int type)
+ {
+ 	struct block_device *bdev = sbi->sb->s_bdev;
+-	bool sync = (type == READ_SYNC);
+ 	struct bio *bio;
+ 
+-	/* This page can be already read by other threads */
+-	if (PageUptodate(page)) {
+-		if (!sync)
+-			unlock_page(page);
+-		return 0;
+-	}
+-
+ 	down_read(&sbi->bio_sem);
+ 
+ 	/* Allocate a new bio */
+@@ -355,18 +359,12 @@ int f2fs_readpage(struct f2fs_sb_info *sbi, struct page *page,
+ 		kfree(bio->bi_private);
+ 		bio_put(bio);
+ 		up_read(&sbi->bio_sem);
++		f2fs_put_page(page, 1);
+ 		return -EFAULT;
+ 	}
+ 
+ 	submit_bio(type, bio);
+ 	up_read(&sbi->bio_sem);
+-
+-	/* wait for read completion if sync */
+-	if (sync) {
+-		lock_page(page);
+-		if (PageError(page))
+-			return -EIO;
+-	}
+ 	return 0;
+ }
+ 
+@@ -637,18 +635,22 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
+ 
+ 		/* Reading beyond i_size is simple: memset to zero */
+ 		zero_user_segments(page, 0, start, end, PAGE_CACHE_SIZE);
+-		return 0;
++		goto out;
+ 	}
+ 
+ 	if (dn.data_blkaddr == NEW_ADDR) {
+ 		zero_user_segment(page, 0, PAGE_CACHE_SIZE);
+ 	} else {
+ 		err = f2fs_readpage(sbi, page, dn.data_blkaddr, READ_SYNC);
+-		if (err) {
+-			f2fs_put_page(page, 1);
++		if (err)
+ 			return err;
++		lock_page(page);
++		if (!PageUptodate(page)) {
++			f2fs_put_page(page, 1);
++			return -EIO;
+ 		}
+ 	}
++out:
+ 	SetPageUptodate(page);
+ 	clear_cold_data(page);
+ 	return 0;
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index a3cb1ff..9e6ed67 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -100,10 +100,13 @@ static void ra_nat_pages(struct f2fs_sb_info *sbi, int nid)
+ 		page = grab_cache_page(mapping, index);
+ 		if (!page)
+ 			continue;
+-		if (f2fs_readpage(sbi, page, index, READ)) {
++		if (PageUptodate(page)) {
+ 			f2fs_put_page(page, 1);
+ 			continue;
+ 		}
++		if (f2fs_readpage(sbi, page, index, READ))
++			continue;
++
+ 		f2fs_put_page(page, 0);
+ 	}
+ }
+@@ -851,8 +854,16 @@ static int read_node_page(struct page *page, int type)
+ 
+ 	get_node_info(sbi, page->index, &ni);
+ 
+-	if (ni.blk_addr == NULL_ADDR)
++	if (ni.blk_addr == NULL_ADDR) {
++		f2fs_put_page(page, 1);
+ 		return -ENOENT;
++	}
++
++	if (PageUptodate(page)) {
++		unlock_page(page);
++		return 0;
++	}
++
+ 	return f2fs_readpage(sbi, page, ni.blk_addr, type);
+ }
+ 
+@@ -865,19 +876,18 @@ void ra_node_page(struct f2fs_sb_info *sbi, nid_t nid)
+ 	struct page *apage;
+ 
+ 	apage = find_get_page(mapping, nid);
+-	if (apage && PageUptodate(apage))
+-		goto release_out;
++	if (apage && PageUptodate(apage)) {
++		f2fs_put_page(apage, 0);
++		return;
++	}
+ 	f2fs_put_page(apage, 0);
+ 
+ 	apage = grab_cache_page(mapping, nid);
+ 	if (!apage)
+ 		return;
+ 
+-	if (read_node_page(apage, READA))
+-		unlock_page(apage);
+-
+-release_out:
+-	f2fs_put_page(apage, 0);
++	if (read_node_page(apage, READA) == 0)
++		f2fs_put_page(apage, 0);
+ 	return;
+ }
+ 
+@@ -892,11 +902,14 @@ struct page *get_node_page(struct f2fs_sb_info *sbi, pgoff_t nid)
+ 		return ERR_PTR(-ENOMEM);
+ 
+ 	err = read_node_page(page, READ_SYNC);
+-	if (err) {
+-		f2fs_put_page(page, 1);
++	if (err)
+ 		return ERR_PTR(err);
+-	}
+ 
++	lock_page(page);
++	if (!PageUptodate(page)) {
++		f2fs_put_page(page, 1);
++		return ERR_PTR(-EIO);
++	}
+ 	BUG_ON(nid != nid_of_node(page));
+ 	mark_page_accessed(page);
+ 	return page;
+@@ -928,11 +941,8 @@ repeat:
+ 		goto page_hit;
+ 
+ 	err = read_node_page(page, READ_SYNC);
+-	unlock_page(page);
+-	if (err) {
+-		f2fs_put_page(page, 0);
++	if (err)
+ 		return ERR_PTR(err);
+-	}
+ 
+ 	/* Then, try readahead for siblings of the desired node */
+ 	end = start + MAX_RA_NODE;
+@@ -957,6 +967,7 @@ page_hit:
+ 		f2fs_put_page(page, 1);
+ 		goto repeat;
+ 	}
++	mark_page_accessed(page);
+ 	return page;
+ }
+ 
+@@ -1473,23 +1484,24 @@ int restore_node_summary(struct f2fs_sb_info *sbi,
+ 	sum_entry = &sum->entries[0];
+ 
+ 	for (i = 0; i < last_offset; i++, sum_entry++) {
++		/*
++		 * In order to read next node page,
++		 * we must clear PageUptodate flag.
++		 */
++		ClearPageUptodate(page);
++
+ 		if (f2fs_readpage(sbi, page, addr, READ_SYNC))
+ 			goto out;
+ 
++		lock_page(page);
+ 		rn = (struct f2fs_node *)page_address(page);
+ 		sum_entry->nid = rn->footer.nid;
+ 		sum_entry->version = 0;
+ 		sum_entry->ofs_in_node = 0;
+ 		addr++;
+-
+-		/*
+-		 * In order to read next node page,
+-		 * we must clear PageUptodate flag.
+-		 */
+-		ClearPageUptodate(page);
+ 	}
+-out:
+ 	unlock_page(page);
++out:
+ 	__free_pages(page, 0);
+ 	return 0;
+ }
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 6b82e20..2d86eb2 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -112,11 +112,16 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 	while (1) {
+ 		struct fsync_inode_entry *entry;
+ 
+-		if (f2fs_readpage(sbi, page, blkaddr, READ_SYNC))
++		err = f2fs_readpage(sbi, page, blkaddr, READ_SYNC);
++		if (err)
+ 			goto out;
+ 
+-		if (cp_ver != cpver_of_node(page))
+-			goto out;
++		lock_page(page);
++
++		if (cp_ver != cpver_of_node(page)) {
++			err = -EINVAL;
++			goto unlock_out;
++		}
+ 
+ 		if (!is_fsync_dnode(page))
+ 			goto next;
+@@ -131,7 +136,7 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 			if (IS_INODE(page) && is_dent_dnode(page)) {
+ 				if (recover_inode_page(sbi, page)) {
+ 					err = -ENOMEM;
+-					goto out;
++					goto unlock_out;
+ 				}
+ 			}
+ 
+@@ -139,14 +144,14 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 			entry = kmem_cache_alloc(fsync_entry_slab, GFP_NOFS);
+ 			if (!entry) {
+ 				err = -ENOMEM;
+-				goto out;
++				goto unlock_out;
+ 			}
+ 
+ 			entry->inode = f2fs_iget(sbi->sb, ino_of_node(page));
+ 			if (IS_ERR(entry->inode)) {
+ 				err = PTR_ERR(entry->inode);
+ 				kmem_cache_free(fsync_entry_slab, entry);
+-				goto out;
++				goto unlock_out;
+ 			}
+ 
+ 			list_add_tail(&entry->list, head);
+@@ -155,15 +160,15 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 		if (IS_INODE(page)) {
+ 			err = recover_inode(entry->inode, page);
+ 			if (err)
+-				goto out;
++				goto unlock_out;
+ 		}
+ next:
+ 		/* check next segment */
+ 		blkaddr = next_blkaddr_of_node(page);
+-		ClearPageUptodate(page);
+ 	}
+-out:
++unlock_out:
+ 	unlock_page(page);
++out:
+ 	__free_pages(page, 0);
+ 	return err;
+ }
+@@ -319,8 +324,10 @@ static void recover_data(struct f2fs_sb_info *sbi,
+ 		if (f2fs_readpage(sbi, page, blkaddr, READ_SYNC))
+ 			goto out;
+ 
++		lock_page(page);
++
+ 		if (cp_ver != cpver_of_node(page))
+-			goto out;
++			goto unlock_out;
+ 
+ 		entry = get_fsync_inode(head, ino_of_node(page));
+ 		if (!entry)
+@@ -336,10 +343,10 @@ static void recover_data(struct f2fs_sb_info *sbi,
+ next:
+ 		/* check next segment */
+ 		blkaddr = next_blkaddr_of_node(page);
+-		ClearPageUptodate(page);
+ 	}
+-out:
++unlock_out:
+ 	unlock_page(page);
++out:
+ 	__free_pages(page, 0);
+ 
+ 	allocate_new_segments(sbi);
+-- 
+1.8.2.1.422.gdcd8c09
+

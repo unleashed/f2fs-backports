@@ -1,0 +1,58 @@
+From 72e000a5b4f22e58ead684c6bc1f87ae030daaa0 Mon Sep 17 00:00:00 2001
+From: Masanari Iida <standby24x7@gmail.com>
+Date: Tue, 19 Mar 2013 08:03:35 +0900
+Subject: [PATCH] f2fs: Fix typo in comments
+
+Correct spelling typo in comments
+
+Signed-off-by: Masanari Iida <standby24x7@gmail.com>
+Acked-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+ fs/f2fs/f2fs.h  | 2 +-
+ fs/f2fs/gc.c    | 2 +-
+ fs/f2fs/super.c | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index cc2213a..201c8d3 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -137,7 +137,7 @@ struct extent_info {
+ 	rwlock_t ext_lock;	/* rwlock for consistency */
+ 	unsigned int fofs;	/* start offset in a file */
+ 	u32 blk_addr;		/* start block address of the extent */
+-	unsigned int len;	/* lenth of the extent */
++	unsigned int len;	/* length of the extent */
+ };
+ 
+ /*
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 94b8a0c..2e3eb2d 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -222,7 +222,7 @@ static unsigned int get_gc_cost(struct f2fs_sb_info *sbi, unsigned int segno,
+ }
+ 
+ /*
+- * This function is called from two pathes.
++ * This function is called from two paths.
+  * One is garbage collection and the other is SSR segment selection.
+  * When it is called during GC, it just gets a victim segment
+  * and it does not remove it from dirty seglist.
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index fea6e58..62e0177 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -82,7 +82,7 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
+ 
+ 	init_once((void *) fi);
+ 
+-	/* Initilize f2fs-specific inode info */
++	/* Initialize f2fs-specific inode info */
+ 	fi->vfs_inode.i_version = 1;
+ 	atomic_set(&fi->dirty_dents, 0);
+ 	fi->i_current_depth = 1;
+-- 
+1.8.2.1.422.gdcd8c09
+

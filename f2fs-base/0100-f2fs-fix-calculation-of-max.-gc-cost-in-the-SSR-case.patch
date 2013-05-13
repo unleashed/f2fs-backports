@@ -1,0 +1,49 @@
+From 81b1e7cf277a41d89503ea3a5e37bb17a1703979 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 5 Feb 2013 13:19:28 +0900
+Subject: [PATCH] f2fs: fix calculation of max. gc cost in the SSR case
+
+In the SSR case, the max gc cost should be the number of pages in a segment.
+Otherwise, f2fs is able to fail getting dirty segments frequently for SSR.
+
+In get_victim_by_default() previously,
+
+while(1) {
+   ...
+   cost = get_gc_cost(); <- cost is between 0 ~ 512.
+   ...
+   if (cost == get_max_cost(sbi, &p)) <- max cost is UINT_MAX due to GC_CB type
+	continue;
+
+   if (nsearched++ >= MAX_VICTIM_SEARCH)
+	break;
+}
+
+So, if there are a number of fully valid segments in series, f2fs cannot skip
+those segments by comparing the cost and max cost of each segment.
+
+Note that, the cost is the number of valid blocks at the time of the last
+checkpoint.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 52d3a39..94b8a0c 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -146,6 +146,9 @@ static void select_policy(struct f2fs_sb_info *sbi, int gc_type,
+ static unsigned int get_max_cost(struct f2fs_sb_info *sbi,
+ 				struct victim_sel_policy *p)
+ {
++	/* SSR allocates in a segment unit */
++	if (p->alloc_mode == SSR)
++		return 1 << sbi->log_blocks_per_seg;
+ 	if (p->gc_mode == GC_GREEDY)
+ 		return (1 << sbi->log_blocks_per_seg) * p->ofs_unit;
+ 	else if (p->gc_mode == GC_CB)
+-- 
+1.8.2.1.422.gdcd8c09
+

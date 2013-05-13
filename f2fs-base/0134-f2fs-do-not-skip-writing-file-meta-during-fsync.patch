@@ -1,0 +1,97 @@
+From 0d924ccac9ea6e5515c14a0e48148c7d96640bf8 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 20 Mar 2013 14:58:38 +0900
+Subject: [PATCH] f2fs: do not skip writing file meta during fsync
+
+This patch removes data_version check flow during the fsync call.
+The original purpose for the use of data_version was to avoid writng inode
+pages redundantly by the fsync calls repeatedly.
+However, when user can modify file meta and then call fsync, we should not
+skip fsync procedure.
+So, let's remove this condition check and hope that user triggers in right
+manner.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c  |  3 ---
+ fs/f2fs/f2fs.h  |  1 -
+ fs/f2fs/file.c  | 10 ----------
+ fs/f2fs/inode.c |  1 -
+ 4 files changed, 15 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 42c8410..829fd58 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -436,7 +436,6 @@ static int f2fs_read_data_pages(struct file *file,
+ int do_write_data_page(struct page *page)
+ {
+ 	struct inode *inode = page->mapping->host;
+-	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	block_t old_blk_addr, new_blk_addr;
+ 	struct dnode_of_data dn;
+ 	int err = 0;
+@@ -466,8 +465,6 @@ int do_write_data_page(struct page *page)
+ 		write_data_page(inode, page, &dn,
+ 				old_blk_addr, &new_blk_addr);
+ 		update_extent_cache(new_blk_addr, &dn);
+-		F2FS_I(inode)->data_version =
+-			le64_to_cpu(F2FS_CKPT(sbi)->checkpoint_ver);
+ 	}
+ out_writepage:
+ 	f2fs_put_dnode(&dn);
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 109e12d..380e2b3 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -159,7 +159,6 @@ struct f2fs_inode_info {
+ 
+ 	/* Use below internally in f2fs*/
+ 	unsigned long flags;		/* use to pass per-file flags */
+-	unsigned long long data_version;/* latest version of data for fsync */
+ 	atomic_t dirty_dents;		/* # of dirty dentry pages */
+ 	f2fs_hash_t chash;		/* hash value of given file name */
+ 	unsigned int clevel;		/* maximum level of given file name */
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 88ae47f..1a88b29 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -124,7 +124,6 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ {
+ 	struct inode *inode = file->f_mapping->host;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+-	unsigned long long cur_version;
+ 	int ret = 0;
+ 	bool need_cp = false;
+ 	struct writeback_control wbc = {
+@@ -148,15 +147,6 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
+ 		goto out;
+ 
+-	mutex_lock(&sbi->cp_mutex);
+-	cur_version = le64_to_cpu(F2FS_CKPT(sbi)->checkpoint_ver);
+-	mutex_unlock(&sbi->cp_mutex);
+-
+-	if (F2FS_I(inode)->data_version != cur_version &&
+-					!(inode->i_state & I_DIRTY))
+-		goto out;
+-	F2FS_I(inode)->data_version--;
+-
+ 	if (!S_ISREG(inode->i_mode) || inode->i_nlink != 1)
+ 		need_cp = true;
+ 	else if (is_inode_flag_set(F2FS_I(inode), FI_NEED_CP))
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index e0e8308..f798ddf 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -80,7 +80,6 @@ static int do_read_inode(struct inode *inode)
+ 	fi->i_xattr_nid = le32_to_cpu(ri->i_xattr_nid);
+ 	fi->i_flags = le32_to_cpu(ri->i_flags);
+ 	fi->flags = 0;
+-	fi->data_version = le64_to_cpu(F2FS_CKPT(sbi)->checkpoint_ver) - 1;
+ 	fi->i_advise = ri->i_advise;
+ 	fi->i_pino = le32_to_cpu(ri->i_pino);
+ 	get_extent_info(&fi->ext, ri->i_ext);
+-- 
+1.8.2.1.422.gdcd8c09
+

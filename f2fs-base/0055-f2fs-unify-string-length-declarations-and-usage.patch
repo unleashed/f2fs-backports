@@ -1,0 +1,170 @@
+From a1ae955f664a5961e449cd62bfd969cad3de3151 Mon Sep 17 00:00:00 2001
+From: Leon Romanovsky <leon@leon.nu>
+Date: Thu, 27 Dec 2012 19:55:46 +0200
+Subject: [PATCH] f2fs: unify string length declarations and usage
+
+This patch is intended to unify string length declarations and usage.
+There are number of calls to strlen which return size_t object.
+The size of this object depends on compiler if it will be bigger,
+equal or even smaller than an unsigned int
+
+Signed-off-by: Leon Romanovsky <leon@leon.nu>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/dir.c   | 10 +++++-----
+ fs/f2fs/f2fs.h  |  2 +-
+ fs/f2fs/hash.c  | 10 ++++++----
+ fs/f2fs/namei.c |  6 +++---
+ fs/f2fs/xattr.c |  5 +++--
+ 5 files changed, 18 insertions(+), 15 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 4a78d6c..951ed52 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -75,7 +75,7 @@ static unsigned long dir_block_index(unsigned int level, unsigned int idx)
+ 	return bidx;
+ }
+ 
+-static bool early_match_name(const char *name, int namelen,
++static bool early_match_name(const char *name, size_t namelen,
+ 			f2fs_hash_t namehash, struct f2fs_dir_entry *de)
+ {
+ 	if (le16_to_cpu(de->name_len) != namelen)
+@@ -88,7 +88,7 @@ static bool early_match_name(const char *name, int namelen,
+ }
+ 
+ static struct f2fs_dir_entry *find_in_block(struct page *dentry_page,
+-			const char *name, int namelen, int *max_slots,
++			const char *name, size_t namelen, int *max_slots,
+ 			f2fs_hash_t namehash, struct page **res_page)
+ {
+ 	struct f2fs_dir_entry *de;
+@@ -127,7 +127,7 @@ found:
+ }
+ 
+ static struct f2fs_dir_entry *find_in_level(struct inode *dir,
+-		unsigned int level, const char *name, int namelen,
++		unsigned int level, const char *name, size_t namelen,
+ 			f2fs_hash_t namehash, struct page **res_page)
+ {
+ 	int s = GET_DENTRY_SLOTS(namelen);
+@@ -182,7 +182,7 @@ struct f2fs_dir_entry *f2fs_find_entry(struct inode *dir,
+ 			struct qstr *child, struct page **res_page)
+ {
+ 	const char *name = child->name;
+-	int namelen = child->len;
++	size_t namelen = child->len;
+ 	unsigned long npages = dir_blocks(dir);
+ 	struct f2fs_dir_entry *de = NULL;
+ 	f2fs_hash_t name_hash;
+@@ -383,7 +383,7 @@ int f2fs_add_link(struct dentry *dentry, struct inode *inode)
+ 	struct inode *dir = dentry->d_parent->d_inode;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
+ 	const char *name = dentry->d_name.name;
+-	int namelen = dentry->d_name.len;
++	size_t namelen = dentry->d_name.len;
+ 	struct page *dentry_page = NULL;
+ 	struct f2fs_dentry_block *dentry_blk = NULL;
+ 	int slots = GET_DENTRY_SLOTS(namelen);
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index a18d63d..13c6dfb 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -881,7 +881,7 @@ int f2fs_sync_fs(struct super_block *, int);
+ /*
+  * hash.c
+  */
+-f2fs_hash_t f2fs_dentry_hash(const char *, int);
++f2fs_hash_t f2fs_dentry_hash(const char *, size_t);
+ 
+ /*
+  * node.c
+diff --git a/fs/f2fs/hash.c b/fs/f2fs/hash.c
+index 6977415..6eb8d26 100644
+--- a/fs/f2fs/hash.c
++++ b/fs/f2fs/hash.c
+@@ -42,7 +42,7 @@ static void TEA_transform(unsigned int buf[4], unsigned int const in[])
+ 	buf[1] += b1;
+ }
+ 
+-static void str2hashbuf(const char *msg, int len, unsigned int *buf, int num)
++static void str2hashbuf(const char *msg, size_t len, unsigned int *buf, int num)
+ {
+ 	unsigned pad, val;
+ 	int i;
+@@ -69,7 +69,7 @@ static void str2hashbuf(const char *msg, int len, unsigned int *buf, int num)
+ 		*buf++ = pad;
+ }
+ 
+-f2fs_hash_t f2fs_dentry_hash(const char *name, int len)
++f2fs_hash_t f2fs_dentry_hash(const char *name, size_t len)
+ {
+ 	__u32 hash;
+ 	f2fs_hash_t f2fs_hash;
+@@ -87,11 +87,13 @@ f2fs_hash_t f2fs_dentry_hash(const char *name, int len)
+ 	buf[3] = 0x10325476;
+ 
+ 	p = name;
+-	while (len > 0) {
++	while (1) {
+ 		str2hashbuf(p, len, in, 4);
+ 		TEA_transform(buf, in);
+-		len -= 16;
+ 		p += 16;
++		if (len <= 16)
++			break;
++		len -= 16;
+ 	}
+ 	hash = buf[0];
+ 	f2fs_hash = cpu_to_le32(hash & ~F2FS_HASH_COL_BIT);
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index b42389f..1a49b88 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -77,8 +77,8 @@ fail:
+ 
+ static int is_multimedia_file(const unsigned char *s, const char *sub)
+ {
+-	int slen = strlen(s);
+-	int sublen = strlen(sub);
++	size_t slen = strlen(s);
++	size_t sublen = strlen(sub);
+ 	int ret;
+ 
+ 	if (sublen > slen)
+@@ -250,7 +250,7 @@ static int f2fs_symlink(struct inode *dir, struct dentry *dentry,
+ 	struct super_block *sb = dir->i_sb;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+ 	struct inode *inode;
+-	unsigned symlen = strlen(symname) + 1;
++	size_t symlen = strlen(symname) + 1;
+ 	int err;
+ 
+ 	f2fs_balance_fs(sbi);
+diff --git a/fs/f2fs/xattr.c b/fs/f2fs/xattr.c
+index 7d52e8d..940136a 100644
+--- a/fs/f2fs/xattr.c
++++ b/fs/f2fs/xattr.c
+@@ -208,7 +208,7 @@ int f2fs_getxattr(struct inode *inode, int name_index, const char *name,
+ 	struct page *page;
+ 	void *base_addr;
+ 	int error = 0, found = 0;
+-	int value_len, name_len;
++	size_t value_len, name_len;
+ 
+ 	if (name == NULL)
+ 		return -EINVAL;
+@@ -304,7 +304,8 @@ int f2fs_setxattr(struct inode *inode, int name_index, const char *name,
+ 	struct f2fs_xattr_entry *here, *last;
+ 	struct page *page;
+ 	void *base_addr;
+-	int error, found, free, name_len, newsize;
++	int error, found, free, newsize;
++	size_t name_len;
+ 	char *pval;
+ 
+ 	if (name == NULL)
+-- 
+1.8.2.1.422.gdcd8c09
+

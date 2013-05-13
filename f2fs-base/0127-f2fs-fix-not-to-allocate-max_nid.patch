@@ -1,0 +1,39 @@
+From 1a7f7f496c5bddf188f9665a8c3d08018a96c49b Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Sat, 16 Mar 2013 08:34:37 +0900
+Subject: [PATCH] f2fs: fix not to allocate max_nid
+
+The build_free_nid should not add free nids over nm_i->max_nid.
+But, there was a hole that invalid free nid was added by the following scenario.
+
+Let's suppose nm_i->max_nid = 150 and the last NAT page has 100 ~ 200 nids.
+
+build_free_nids
+  - get_current_nat_page loads the last NAT page
+  - scan_nat_page can add 100 ~ 200 nids
+    -> Bug here!
+So, when scanning an NAT page, we should check each candidate whether it is
+over max_nid or not.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index bf9172b..f7b03ba 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1268,6 +1268,8 @@ static int scan_nat_page(struct f2fs_nm_info *nm_i,
+ 	i = start_nid % NAT_ENTRY_PER_BLOCK;
+ 
+ 	for (; i < NAT_ENTRY_PER_BLOCK; i++, start_nid++) {
++		if (start_nid >= nm_i->max_nid)
++			break;
+ 		blk_addr  = le32_to_cpu(nat_blk->entries[i].block_addr);
+ 		BUG_ON(blk_addr == NEW_ADDR);
+ 		if (blk_addr == NULL_ADDR)
+-- 
+1.8.2.1.422.gdcd8c09
+

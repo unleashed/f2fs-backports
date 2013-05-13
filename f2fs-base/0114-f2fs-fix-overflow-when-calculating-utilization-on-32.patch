@@ -1,0 +1,33 @@
+From 8c7a67fec9b53c1bd65fe9006b7e944e71a17b3a Mon Sep 17 00:00:00 2001
+From: Changman Lee <cm224.lee@samsung.com>
+Date: Mon, 25 Feb 2013 17:38:02 +0900
+Subject: [PATCH] f2fs: fix overflow when calculating utilization on 32-bit
+
+Use div_u64 to fix overflow when calculating utilization.
+*long int* is 4-bytes on 32-bit so (user blocks * 100) might be
+overflow if disk size is over e.g. 512GB.
+
+Signed-off-by: Changman Lee <cm224.lee@samsung.com>
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.h | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index 552dadb..e399bd4 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -464,8 +464,7 @@ static inline bool has_not_enough_free_secs(struct f2fs_sb_info *sbi, int freed)
+ 
+ static inline int utilization(struct f2fs_sb_info *sbi)
+ {
+-	return (long int)valid_user_blocks(sbi) * 100 /
+-			(long int)sbi->user_block_count;
++	return div_u64(valid_user_blocks(sbi) * 100, sbi->user_block_count);
+ }
+ 
+ /*
+-- 
+1.8.2.1.422.gdcd8c09
+

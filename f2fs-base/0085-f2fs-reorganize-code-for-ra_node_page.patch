@@ -1,0 +1,40 @@
+From 554762da52847e6d0456c066f6cea0fe650ebcbf Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Wed, 30 Jan 2013 22:47:16 +0900
+Subject: [PATCH] f2fs: reorganize code for ra_node_page
+
+We can remove unneeded label unlock_out, avoid unnecessary jump
+and reorganize the returning conditions in this function.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 8 ++------
+ 1 file changed, 2 insertions(+), 6 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 9bda63c..f71dfbb 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -874,15 +874,11 @@ void ra_node_page(struct f2fs_sb_info *sbi, nid_t nid)
+ 		return;
+ 
+ 	if (read_node_page(apage, READA))
+-		goto unlock_out;
++		unlock_page(apage);
+ 
+-	page_cache_release(apage);
+-	return;
+-
+-unlock_out:
+-	unlock_page(apage);
+ release_out:
+ 	page_cache_release(apage);
++	return;
+ }
+ 
+ struct page *get_node_page(struct f2fs_sb_info *sbi, pgoff_t nid)
+-- 
+1.8.2.1.422.gdcd8c09
+

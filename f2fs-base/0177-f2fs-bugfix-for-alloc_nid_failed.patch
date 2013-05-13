@@ -1,0 +1,43 @@
+From ce57ce687ed7a0f349dfbae7225c7400b8e05ef4 Mon Sep 17 00:00:00 2001
+From: Haicheng Li <haicheng.li@linux.intel.com>
+Date: Mon, 6 May 2013 23:15:41 +0800
+Subject: [PATCH] f2fs: bugfix for alloc_nid_failed()
+
+Directly drop the free_nid cache when nm_i->fcnt > 2 * MAX_FREE_NIDS
+
+Since there is NOT nmi->free_nid_list_lock spinlock protection between
+a sequential calling of alloc_nid() and alloc_nid_failed(), some other
+threads may already add new free_nid to the free_nid_list during this
+period.
+
+We need to make sure nmi->fcnt is never > 2 * MAX_FREE_NIDS.
+
+Signed-off-by: Haicheng Li <haicheng.li@linux.intel.com>
+[Jaegeuk Kim: fit the coding style]
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 7209d63..d682f34 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1439,8 +1439,12 @@ void alloc_nid_failed(struct f2fs_sb_info *sbi, nid_t nid)
+ 	spin_lock(&nm_i->free_nid_list_lock);
+ 	i = __lookup_free_nid_list(nid, &nm_i->free_nid_list);
+ 	BUG_ON(!i || i->state != NID_ALLOC);
+-	i->state = NID_NEW;
+-	nm_i->fcnt++;
++	if (nm_i->fcnt > 2 * MAX_FREE_NIDS) {
++		__del_from_free_nid_list(i);
++	} else {
++		i->state = NID_NEW;
++		nm_i->fcnt++;
++	}
+ 	spin_unlock(&nm_i->free_nid_list_lock);
+ }
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,50 @@
+From bcdc5e94cc59ed50c56f05898934d88c59bf0ce0 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Sun, 31 Mar 2013 13:58:51 +0900
+Subject: [PATCH] f2fs: allocate remained free segments in the LFS mode
+
+This patch adds a new condition that allocates free segments in the current
+active section even if SSR is needed.
+Otherwise, f2fs cannot allocate remained free segments in the section since
+SSR finds dirty segments only.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index d5244f6..fe520d3 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -347,6 +347,17 @@ next:
+ 	return NULL_SEGNO;
+ }
+ 
++static int is_next_segment_free(struct f2fs_sb_info *sbi, int type)
++{
++	struct curseg_info *curseg = CURSEG_I(sbi, type);
++	unsigned int segno = curseg->segno;
++	struct free_segmap_info *free_i = FREE_I(sbi);
++
++	if (segno + 1 < TOTAL_SEGS(sbi) && (segno + 1) % sbi->segs_per_sec)
++		return !test_bit(segno + 1, free_i->free_segmap);
++	return 0;
++}
++
+ /*
+  * Find a new segment from the free segments bitmap to right order
+  * This function should be returned with success, otherwise BUG
+@@ -580,6 +591,8 @@ static void allocate_segment_by_default(struct f2fs_sb_info *sbi,
+ 		change_curseg(sbi, type, false);
+ 	else if (type == CURSEG_WARM_NODE)
+ 		new_curseg(sbi, type, false);
++	else if (curseg->alloc_type == LFS && is_next_segment_free(sbi, type))
++		new_curseg(sbi, type, false);
+ 	else if (need_SSR(sbi) && get_ssr_segment(sbi, type))
+ 		change_curseg(sbi, type, true);
+ 	else
+-- 
+1.8.2.1.422.gdcd8c09
+

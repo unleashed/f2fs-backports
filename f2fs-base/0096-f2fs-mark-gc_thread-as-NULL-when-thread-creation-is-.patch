@@ -1,0 +1,33 @@
+From eb5073ed2d2ecafe75e0c477260b989330f9b70a Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 2 Feb 2013 23:52:42 +0900
+Subject: [PATCH] f2fs: mark gc_thread as NULL when thread creation is failed
+
+When gc thread creation is failed, mark gc_thread as NULL to avoid
+crash while trying to stop invalid thread in stop_gc_thread->kthread_stop.
+Instead make it return from:
+	if (!gc_th)
+       return;
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index b1e4985..16fdec3 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -104,6 +104,7 @@ int start_gc_thread(struct f2fs_sb_info *sbi)
+ 			"f2fs_gc-%u:%u", MAJOR(dev), MINOR(dev));
+ 	if (IS_ERR(gc_th->f2fs_gc_task)) {
+ 		kfree(gc_th);
++		sbi->gc_thread = NULL;
+ 		return -ENOMEM;
+ 	}
+ 	return 0;
+-- 
+1.8.2.1.422.gdcd8c09
+

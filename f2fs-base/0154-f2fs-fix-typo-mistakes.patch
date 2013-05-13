@@ -1,0 +1,46 @@
+From 81233cbfe7612c549c4d8103483e3ba54543fc98 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 6 Apr 2013 14:44:32 +0900
+Subject: [PATCH] f2fs: fix typo mistakes
+
+Fix typo mistakes.
+1. I think that it should be 'L' instead of 'V'.
+2. and try to fix 'Front' instead of 'Frone'
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c    | 2 +-
+ fs/f2fs/segment.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 7071424..1bb5102 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -134,7 +134,7 @@ void update_extent_cache(block_t blk_addr, struct dnode_of_data *dn)
+ 		goto end_update;
+ 	}
+ 
+-	/* Frone merge */
++	/* Front merge */
+ 	if (fofs == start_fofs - 1 && blk_addr == start_blkaddr - 1) {
+ 		fi->ext.fofs--;
+ 		fi->ext.blk_addr--;
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index 994bb7b..26fc054 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -12,7 +12,7 @@
+ #define NULL_SEGNO			((unsigned int)(~0))
+ #define NULL_SECNO			((unsigned int)(~0))
+ 
+-/* V: Logical segment # in volume, R: Relative segment # in main area */
++/* L: Logical segment # in volume, R: Relative segment # in main area */
+ #define GET_L2R_SEGNO(free_i, segno)	(segno - free_i->start_segno)
+ #define GET_R2L_SEGNO(free_i, segno)	(segno + free_i->start_segno)
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

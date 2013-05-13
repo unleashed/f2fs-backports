@@ -1,0 +1,272 @@
+From d5209b34a20ae861e9ecd76029c656864a1aa01b Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 24 Apr 2013 13:19:56 +0900
+Subject: [PATCH] f2fs: give a chance to merge IOs by IO scheduler
+
+Previously, background GC submits many 4KB read requests to load victim blocks
+and/or its (i)node blocks.
+
+...
+f2fs_gc : f2fs_readpage: ino = 1, page_index = 0xb61, blkaddr = 0x3b964ed
+f2fs_gc : block_rq_complete: 8,16 R () 499854968 + 8 [0]
+f2fs_gc : f2fs_readpage: ino = 1, page_index = 0xb6f, blkaddr = 0x3b964ee
+f2fs_gc : block_rq_complete: 8,16 R () 499854976 + 8 [0]
+f2fs_gc : f2fs_readpage: ino = 1, page_index = 0xb79, blkaddr = 0x3b964ef
+f2fs_gc : block_rq_complete: 8,16 R () 499854984 + 8 [0]
+...
+
+However, by the fact that many IOs are sequential, we can give a chance to merge
+the IOs by IO scheduler.
+In order to do that, let's use blk_plug.
+
+...
+f2fs_gc : f2fs_iget: ino = 143
+f2fs_gc : f2fs_readpage: ino = 143, page_index = 0x1c6, blkaddr = 0x2e6ee
+f2fs_gc : f2fs_iget: ino = 143
+f2fs_gc : f2fs_readpage: ino = 143, page_index = 0x1c7, blkaddr = 0x2e6ef
+<idle> : block_rq_complete: 8,16 R () 1519616 + 8 [0]
+<idle> : block_rq_complete: 8,16 R () 1519848 + 8 [0]
+<idle> : block_rq_complete: 8,16 R () 1520432 + 96 [0]
+<idle> : block_rq_complete: 8,16 R () 1520536 + 104 [0]
+<idle> : block_rq_complete: 8,16 R () 1521008 + 112 [0]
+<idle> : block_rq_complete: 8,16 R () 1521440 + 152 [0]
+<idle> : block_rq_complete: 8,16 R () 1521688 + 144 [0]
+<idle> : block_rq_complete: 8,16 R () 1522128 + 192 [0]
+<idle> : block_rq_complete: 8,16 R () 1523256 + 328 [0]
+...
+
+Note that this issue should be addressed in checkpoint, and some readahead
+flows too.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c |  5 +++++
+ fs/f2fs/data.c       | 15 +++++++++------
+ fs/f2fs/dir.c        |  2 +-
+ fs/f2fs/f2fs.h       |  2 +-
+ fs/f2fs/file.c       |  2 +-
+ fs/f2fs/gc.c         | 11 ++++++++++-
+ fs/f2fs/node.c       |  9 +++++++++
+ 7 files changed, 36 insertions(+), 10 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index f54b83b..590ea50 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -549,6 +549,10 @@ static void block_operations(struct f2fs_sb_info *sbi)
+ 		.nr_to_write = LONG_MAX,
+ 		.for_reclaim = 0,
+ 	};
++	struct blk_plug plug;
++
++	blk_start_plug(&plug);
++
+ retry_flush_dents:
+ 	mutex_lock_all(sbi);
+ 
+@@ -571,6 +575,7 @@ retry_flush_nodes:
+ 		sync_node_pages(sbi, 0, &wbc);
+ 		goto retry_flush_nodes;
+ 	}
++	blk_finish_plug(&plug);
+ }
+ 
+ static void unblock_operations(struct f2fs_sb_info *sbi)
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index b55f500..5e805ef8 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -173,7 +173,7 @@ end_update:
+ 	return;
+ }
+ 
+-struct page *find_data_page(struct inode *inode, pgoff_t index)
++struct page *find_data_page(struct inode *inode, pgoff_t index, bool sync)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct address_space *mapping = inode->i_mapping;
+@@ -208,11 +208,14 @@ struct page *find_data_page(struct inode *inode, pgoff_t index)
+ 		return page;
+ 	}
+ 
+-	err = f2fs_readpage(sbi, page, dn.data_blkaddr, READ_SYNC);
+-	wait_on_page_locked(page);
+-	if (!PageUptodate(page)) {
+-		f2fs_put_page(page, 0);
+-		return ERR_PTR(-EIO);
++	err = f2fs_readpage(sbi, page, dn.data_blkaddr,
++					sync ? READ_SYNC : READA);
++	if (sync) {
++		wait_on_page_locked(page);
++		if (!PageUptodate(page)) {
++			f2fs_put_page(page, 0);
++			return ERR_PTR(-EIO);
++		}
+ 	}
+ 	return page;
+ }
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 02981ae..1ac6b93 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -148,7 +148,7 @@ static struct f2fs_dir_entry *find_in_level(struct inode *dir,
+ 
+ 	for (; bidx < end_block; bidx++) {
+ 		/* no need to allocate new dentry pages to all the indices */
+-		dentry_page = find_data_page(dir, bidx);
++		dentry_page = find_data_page(dir, bidx, true);
+ 		if (IS_ERR(dentry_page)) {
+ 			room = true;
+ 			continue;
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 06cc75c..6283c8d 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -1023,7 +1023,7 @@ void destroy_checkpoint_caches(void);
+  */
+ int reserve_new_block(struct dnode_of_data *);
+ void update_extent_cache(block_t, struct dnode_of_data *);
+-struct page *find_data_page(struct inode *, pgoff_t);
++struct page *find_data_page(struct inode *, pgoff_t, bool);
+ struct page *get_lock_data_page(struct inode *, pgoff_t);
+ struct page *get_new_data_page(struct inode *, pgoff_t, bool);
+ int f2fs_readpage(struct f2fs_sb_info *, struct page *, block_t, int);
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 5cc4dd8..d48f4a5 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -212,7 +212,7 @@ static void truncate_partial_data_page(struct inode *inode, u64 from)
+ 	if (!offset)
+ 		return;
+ 
+-	page = find_data_page(inode, from >> PAGE_CACHE_SHIFT);
++	page = find_data_page(inode, from >> PAGE_CACHE_SHIFT, false);
+ 	if (IS_ERR(page))
+ 		return;
+ 
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 6ed3263..25a1f7e 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -386,6 +386,7 @@ static void gc_node_segment(struct f2fs_sb_info *sbi,
+ 
+ next_step:
+ 	entry = sum;
++
+ 	for (off = 0; off < sbi->blocks_per_seg; off++, entry++) {
+ 		nid_t nid = le32_to_cpu(entry->nid);
+ 		struct page *node_page;
+@@ -417,6 +418,7 @@ next_step:
+ 		f2fs_put_page(node_page, 1);
+ 		stat_inc_node_blk_count(sbi, 1);
+ 	}
++
+ 	if (initial) {
+ 		initial = false;
+ 		goto next_step;
+@@ -545,6 +547,7 @@ static void gc_data_segment(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
+ 
+ next_step:
+ 	entry = sum;
++
+ 	for (off = 0; off < sbi->blocks_per_seg; off++, entry++) {
+ 		struct page *data_page;
+ 		struct inode *inode;
+@@ -582,7 +585,7 @@ next_step:
+ 				continue;
+ 
+ 			data_page = find_data_page(inode,
+-					start_bidx + ofs_in_node);
++					start_bidx + ofs_in_node, false);
+ 			if (IS_ERR(data_page))
+ 				goto next_iput;
+ 
+@@ -603,6 +606,7 @@ next_step:
+ next_iput:
+ 		iput(inode);
+ 	}
++
+ 	if (++phase < 4)
+ 		goto next_step;
+ 
+@@ -636,12 +640,15 @@ static void do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
+ {
+ 	struct page *sum_page;
+ 	struct f2fs_summary_block *sum;
++	struct blk_plug plug;
+ 
+ 	/* read segment summary of victim */
+ 	sum_page = get_sum_page(sbi, segno);
+ 	if (IS_ERR(sum_page))
+ 		return;
+ 
++	blk_start_plug(&plug);
++
+ 	sum = page_address(sum_page);
+ 
+ 	switch (GET_SUM_TYPE((&sum->footer))) {
+@@ -652,6 +659,8 @@ static void do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
+ 		gc_data_segment(sbi, sum->entries, ilist, segno, gc_type);
+ 		break;
+ 	}
++	blk_finish_plug(&plug);
++
+ 	stat_inc_seg_count(sbi, GET_SUM_TYPE((&sum->footer)));
+ 	stat_inc_call_count(sbi->stat_info);
+ 
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 5a82550..a0aa044 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -89,10 +89,13 @@ static void ra_nat_pages(struct f2fs_sb_info *sbi, int nid)
+ {
+ 	struct address_space *mapping = sbi->meta_inode->i_mapping;
+ 	struct f2fs_nm_info *nm_i = NM_I(sbi);
++	struct blk_plug plug;
+ 	struct page *page;
+ 	pgoff_t index;
+ 	int i;
+ 
++	blk_start_plug(&plug);
++
+ 	for (i = 0; i < FREE_NID_PAGES; i++, nid += NAT_ENTRY_PER_BLOCK) {
+ 		if (nid >= nm_i->max_nid)
+ 			nid = 0;
+@@ -110,6 +113,7 @@ static void ra_nat_pages(struct f2fs_sb_info *sbi, int nid)
+ 
+ 		f2fs_put_page(page, 0);
+ 	}
++	blk_finish_plug(&plug);
+ }
+ 
+ static struct nat_entry *__lookup_nat_cache(struct f2fs_nm_info *nm_i, nid_t n)
+@@ -942,6 +946,7 @@ struct page *get_node_page_ra(struct page *parent, int start)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(parent->mapping->host->i_sb);
+ 	struct address_space *mapping = sbi->node_inode->i_mapping;
++	struct blk_plug plug;
+ 	struct page *page;
+ 	int err, i, end;
+ 	nid_t nid;
+@@ -961,6 +966,8 @@ struct page *get_node_page_ra(struct page *parent, int start)
+ 	else if (err == LOCKED_PAGE)
+ 		goto page_hit;
+ 
++	blk_start_plug(&plug);
++
+ 	/* Then, try readahead for siblings of the desired node */
+ 	end = start + MAX_RA_NODE;
+ 	end = min(end, NIDS_PER_BLOCK);
+@@ -971,6 +978,8 @@ struct page *get_node_page_ra(struct page *parent, int start)
+ 		ra_node_page(sbi, nid);
+ 	}
+ 
++	blk_finish_plug(&plug);
++
+ 	lock_page(page);
+ 
+ page_hit:
+-- 
+1.8.2.1.422.gdcd8c09
+

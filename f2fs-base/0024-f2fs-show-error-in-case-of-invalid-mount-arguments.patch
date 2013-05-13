@@ -1,0 +1,30 @@
+From 5318977485ee55d77cd228de3b9c5b28f6a7d075 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 1 Dec 2012 10:55:32 +0900
+Subject: [PATCH] f2fs: show error in case of invalid mount arguments
+
+print the invalid argument/value from parse_options in case of
+mount failure.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+---
+ fs/f2fs/super.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 4360600..5830e53 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -311,6 +311,8 @@ static int parse_options(struct f2fs_sb_info *sbi, char *options)
+ 			set_opt(sbi, DISABLE_EXT_IDENTIFY);
+ 			break;
+ 		default:
++			pr_err("Unrecognized mount option \"%s\" or missing value\n",
++					p);
+ 			return -EINVAL;
+ 		}
+ 	}
+-- 
+1.8.2.1.422.gdcd8c09
+

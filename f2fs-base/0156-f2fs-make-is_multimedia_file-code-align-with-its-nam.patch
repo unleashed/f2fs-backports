@@ -1,0 +1,55 @@
+From 192e61ebecd67a6ec2c0a34c359e59f78a90a06c Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 20 Apr 2013 01:27:21 +0900
+Subject: [PATCH] f2fs: make is_multimedia_file code align with its name
+
+The code conditions put inside the function is_multimedia_file are
+reverse to the name i.e, we need to negate the return to actually
+check if the file is a multimedia file. So, change the code and usage
+path to align both the name and comparision conditions.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/namei.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 841f6b4..1dbf11d 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -83,7 +83,7 @@ static int is_multimedia_file(const unsigned char *s, const char *sub)
+ 	int ret;
+ 
+ 	if (sublen > slen)
+-		return 1;
++		return 0;
+ 
+ 	ret = memcmp(s + slen - sublen, sub, sublen);
+ 	if (ret) {	/* compare upper case */
+@@ -91,10 +91,10 @@ static int is_multimedia_file(const unsigned char *s, const char *sub)
+ 		char upper_sub[8];
+ 		for (i = 0; i < sublen && i < sizeof(upper_sub); i++)
+ 			upper_sub[i] = toupper(sub[i]);
+-		return memcmp(s + slen - sublen, upper_sub, sublen);
++		return !memcmp(s + slen - sublen, upper_sub, sublen);
+ 	}
+ 
+-	return ret;
++	return !ret;
+ }
+ 
+ /*
+@@ -108,7 +108,7 @@ static inline void set_cold_files(struct f2fs_sb_info *sbi, struct inode *inode,
+ 
+ 	int count = le32_to_cpu(sbi->raw_super->extension_count);
+ 	for (i = 0; i < count; i++) {
+-		if (!is_multimedia_file(name, extlist[i])) {
++		if (is_multimedia_file(name, extlist[i])) {
+ 			set_cold_file(inode);
+ 			break;
+ 		}
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,50 @@
+From de14368238c2b4c0bbb5b06949dc69bd462c0689 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 3 Jan 2013 09:24:28 +0900
+Subject: [PATCH] f2fs: avoid null dereference in f2fs_acl_from_disk
+
+This patch resolves Coverity #751303:
+
+>>> CID 753103: Explicit null dereferenced (FORWARD_NULL) Passing null
+>>> pointer "value" to function "f2fs_acl_from_disk(char const *, size_t)",
+	which dereferences it.
+
+[Error path]
+- value = NULL;
+- retval = 0 by f2fs_getxattr();
+- f2fs_acl_from_disk(value:NULL, ...);
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/acl.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index e95b949..137af42 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -191,15 +191,14 @@ struct posix_acl *f2fs_get_acl(struct inode *inode, int type)
+ 		retval = f2fs_getxattr(inode, name_index, "", value, retval);
+ 	}
+ 
+-	if (retval < 0) {
+-		if (retval == -ENODATA)
+-			acl = NULL;
+-		else
+-			acl = ERR_PTR(retval);
+-	} else {
++	if (retval > 0)
+ 		acl = f2fs_acl_from_disk(value, retval);
+-	}
++	else if (retval == -ENODATA)
++		acl = NULL;
++	else
++		acl = ERR_PTR(retval);
+ 	kfree(value);
++
+ 	if (!IS_ERR(acl))
+ 		set_cached_acl(inode, type, acl);
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

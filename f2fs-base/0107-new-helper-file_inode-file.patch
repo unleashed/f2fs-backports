@@ -1,0 +1,64 @@
+From ae19f83b5701e046a709ada16f60f64f2a2971d9 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Wed, 23 Jan 2013 17:07:38 -0500
+Subject: [PATCH] new helper: file_inode(file)
+
+[alex: trimmed down to modify f2fs and linux/fs.h]
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/dir.c      | 2 +-
+ include/linux/fs.h | 9 +++++++--
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index c395c50..a1f3844 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -600,7 +600,7 @@ bool f2fs_empty_dir(struct inode *dir)
+ static int f2fs_readdir(struct file *file, void *dirent, filldir_t filldir)
+ {
+ 	unsigned long pos = file->f_pos;
+-	struct inode *inode = file->f_dentry->d_inode;
++	struct inode *inode = file_inode(file);
+ 	unsigned long npages = dir_blocks(inode);
+ 	unsigned char *types = NULL;
+ 	unsigned int bit_pos = 0, start_bit_pos = 0;
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index e0bc4ff..9c7e5c0 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -2256,6 +2256,11 @@ static inline bool execute_ok(struct inode *inode)
+ 	return (inode->i_mode & S_IXUGO) || S_ISDIR(inode->i_mode);
+ }
+ 
++static inline struct inode *file_inode(struct file *f)
++{
++	return f->f_path.dentry->d_inode;
++}
++
+ /*
+  * get_write_access() gets write permission for a file.
+  * put_write_access() releases this write permission.
+@@ -2278,7 +2283,7 @@ static inline int get_write_access(struct inode *inode)
+ }
+ static inline int deny_write_access(struct file *file)
+ {
+-	struct inode *inode = file->f_path.dentry->d_inode;
++	struct inode *inode = file_inode(file);
+ 	return atomic_dec_unless_positive(&inode->i_writecount) ? 0 : -ETXTBSY;
+ }
+ static inline void put_write_access(struct inode * inode)
+@@ -2288,7 +2293,7 @@ static inline void put_write_access(struct inode * inode)
+ static inline void allow_write_access(struct file *file)
+ {
+ 	if (file)
+-		atomic_inc(&file->f_path.dentry->d_inode->i_writecount);
++		atomic_inc(&file_inode(file)->i_writecount);
+ }
+ #ifdef CONFIG_IMA
+ static inline void i_readcount_dec(struct inode *inode)
+-- 
+1.8.2.1.422.gdcd8c09
+

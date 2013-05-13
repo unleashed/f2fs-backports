@@ -1,0 +1,45 @@
+From 628fa71c8293e85492a8d8882283442323ab08dc Mon Sep 17 00:00:00 2001
+From: "Eric W. Biederman" <ebiederm@xmission.com>
+Date: Sat, 22 Dec 2012 01:52:39 -0800
+Subject: [PATCH] f2fs: Don't assign e_id in f2fs_acl_from_disk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+With user namespaces enabled building f2fs fails with:
+
+ CC      fs/f2fs/acl.o
+fs/f2fs/acl.c: In function ‘f2fs_acl_from_disk’:
+fs/f2fs/acl.c:85:21: error: ‘struct posix_acl_entry’ has no member named ‘e_id’
+make[2]: *** [fs/f2fs/acl.o] Error 1
+make[2]: Target `__build' not remade because of errors.
+
+e_id is a backwards compatibility field only used for file systems
+that haven't been converted to use kuids and kgids.  When the posix
+acl tag field is neither ACL_USER nor ACL_GROUP assigning e_id is
+unnecessary.  Remove the assignment so f2fs will build with user
+namespaces enabled.
+
+Cc: Namjae Jeon <namjae.jeon@samsung.com>
+Cc: Amit Sahrawat <a.sahrawat@samsung.com>
+Acked-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Signed-off-by: "Eric W. Biederman" <ebiederm@xmission.com>
+---
+ fs/f2fs/acl.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index fed74d1..e95b949 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -82,7 +82,6 @@ static struct posix_acl *f2fs_acl_from_disk(const char *value, size_t size)
+ 		case ACL_GROUP_OBJ:
+ 		case ACL_MASK:
+ 		case ACL_OTHER:
+-			acl->a_entries[i].e_id = ACL_UNDEFINED_ID;
+ 			entry = (struct f2fs_acl_entry *)((char *)entry +
+ 					sizeof(struct f2fs_acl_entry_short));
+ 			break;
+-- 
+1.8.2.1.422.gdcd8c09
+

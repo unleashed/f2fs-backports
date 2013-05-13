@@ -1,0 +1,38 @@
+From eca84c7fdfdce420eabc13751b17141218a85a99 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 31 Jan 2013 10:15:35 +0900
+Subject: [PATCH] f2fs: remove the use of page_cache_release
+
+Let's remove the use of page_cache_release() in f2fs, and instead, use
+f2fs_put_page(page, 0) which is exactly same but for code readability.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index f71dfbb..33fa6d5 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -104,7 +104,7 @@ static void ra_nat_pages(struct f2fs_sb_info *sbi, int nid)
+ 			f2fs_put_page(page, 1);
+ 			continue;
+ 		}
+-		page_cache_release(page);
++		f2fs_put_page(page, 0);
+ 	}
+ }
+ 
+@@ -877,7 +877,7 @@ void ra_node_page(struct f2fs_sb_info *sbi, nid_t nid)
+ 		unlock_page(apage);
+ 
+ release_out:
+-	page_cache_release(apage);
++	f2fs_put_page(apage, 0);
+ 	return;
+ }
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,35 @@
+From 1c62b7c8e0e9699990b4b60031b2fd5822dbda25 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sun, 30 Dec 2012 14:52:37 +0900
+Subject: [PATCH] f2fs: fix time update in case of f2fs fallocate
+
+After doing a punch hole or expanding inode doing fallocation.
+The change and modification time are not update for the file.
+So, update time after no issue is observed in fallocate.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/file.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 7f9ea92..88593c5 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -545,6 +545,11 @@ static long f2fs_fallocate(struct file *file, int mode,
+ 	else
+ 		ret = expand_inode_data(inode, offset, len, mode);
+ 
++	if (!ret) {
++		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
++		mark_inode_dirty(inode);
++	}
++
+ 	f2fs_balance_fs(sbi);
+ 	return ret;
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

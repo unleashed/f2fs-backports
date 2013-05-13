@@ -1,0 +1,39 @@
+From be2540bc2a8f082089b55287c14121b550454317 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 21 Mar 2013 12:53:19 +0900
+Subject: [PATCH] f2fs: remain nat cache entries for further free nid
+ allocation
+
+In the checkpoint flow, the f2fs investigates the total nat cache entries.
+Previously, if an entry has NULL_ADDR, f2fs drops the entry and adds the
+obsolete nid to the free nid list.
+However, this free nid will be reused sooner, resulting in its nat entry miss.
+In order to avoid this, we don't need to drop the nat cache entry at this moment.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index f7b03ba..0177f94 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1621,11 +1621,11 @@ flush_now:
+ 			nid_in_journal(sum, offset) = cpu_to_le32(nid);
+ 		}
+ 
+-		if (nat_get_blkaddr(ne) == NULL_ADDR) {
++		if (nat_get_blkaddr(ne) == NULL_ADDR &&
++					!add_free_nid(NM_I(sbi), nid)) {
+ 			write_lock(&nm_i->nat_tree_lock);
+ 			__del_from_nat_cache(nm_i, ne);
+ 			write_unlock(&nm_i->nat_tree_lock);
+-			add_free_nid(NM_I(sbi), nid);
+ 		} else {
+ 			write_lock(&nm_i->nat_tree_lock);
+ 			__clear_nat_cache_dirty(nm_i, ne);
+-- 
+1.8.2.1.422.gdcd8c09
+

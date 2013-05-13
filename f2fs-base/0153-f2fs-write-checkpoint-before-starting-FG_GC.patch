@@ -1,0 +1,32 @@
+From 5a57b5c576cab9fc0abeec4202df542c9168914d Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 8 Apr 2013 16:01:00 +0900
+Subject: [PATCH] f2fs: write checkpoint before starting FG_GC
+
+In order to be aware of prefree and free sections during FG_GC, let's start with
+write_checkpoint().
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 83cec8f..37b05e1 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -669,8 +669,10 @@ gc_more:
+ 	if (!(sbi->sb->s_flags & MS_ACTIVE))
+ 		goto stop;
+ 
+-	if (gc_type == BG_GC && has_not_enough_free_secs(sbi, nfree))
++	if (gc_type == BG_GC && has_not_enough_free_secs(sbi, nfree)) {
+ 		gc_type = FG_GC;
++		write_checkpoint(sbi, false);
++	}
+ 
+ 	if (!__get_victim(sbi, &segno, gc_type, NO_CHECK_TYPE))
+ 		goto stop;
+-- 
+1.8.2.1.422.gdcd8c09
+

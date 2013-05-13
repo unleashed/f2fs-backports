@@ -1,0 +1,121 @@
+From 9b4671ff36e2c752722c32bd181008d6d0da8700 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Sun, 31 Mar 2013 12:39:49 +0900
+Subject: [PATCH] f2fs: introduce TOTAL_SECS macro
+
+Let's use a macro to get the total number of sections.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/debug.c   |  7 +++----
+ fs/f2fs/segment.c | 19 +++++++++----------
+ fs/f2fs/segment.h |  1 +
+ 3 files changed, 13 insertions(+), 14 deletions(-)
+
+diff --git a/fs/f2fs/debug.c b/fs/f2fs/debug.c
+index 025b9e2..20b8794 100644
+--- a/fs/f2fs/debug.c
++++ b/fs/f2fs/debug.c
+@@ -106,7 +106,7 @@ static void update_sit_info(struct f2fs_sb_info *sbi)
+ 		}
+ 	}
+ 	mutex_unlock(&sit_i->sentry_lock);
+-	dist = sbi->total_sections * hblks_per_sec * hblks_per_sec / 100;
++	dist = TOTAL_SECS(sbi) * hblks_per_sec * hblks_per_sec / 100;
+ 	si->bimodal = bimodal / dist;
+ 	if (si->dirty_count)
+ 		si->avg_vblocks = total_vblocks / ndirty;
+@@ -138,14 +138,13 @@ static void update_mem_info(struct f2fs_sb_info *sbi)
+ 	si->base_mem += f2fs_bitmap_size(TOTAL_SEGS(sbi));
+ 	si->base_mem += 2 * SIT_VBLOCK_MAP_SIZE * TOTAL_SEGS(sbi);
+ 	if (sbi->segs_per_sec > 1)
+-		si->base_mem += sbi->total_sections *
+-			sizeof(struct sec_entry);
++		si->base_mem += TOTAL_SECS(sbi) * sizeof(struct sec_entry);
+ 	si->base_mem += __bitmap_size(sbi, SIT_BITMAP);
+ 
+ 	/* build free segmap */
+ 	si->base_mem += sizeof(struct free_segmap_info);
+ 	si->base_mem += f2fs_bitmap_size(TOTAL_SEGS(sbi));
+-	si->base_mem += f2fs_bitmap_size(sbi->total_sections);
++	si->base_mem += f2fs_bitmap_size(TOTAL_SECS(sbi));
+ 
+ 	/* build curseg */
+ 	si->base_mem += sizeof(struct curseg_info) * NR_CURSEG_TYPE;
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 1758149..179a13e 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -348,9 +348,8 @@ static void get_new_segment(struct f2fs_sb_info *sbi,
+ 			unsigned int *newseg, bool new_sec, int dir)
+ {
+ 	struct free_segmap_info *free_i = FREE_I(sbi);
+-	unsigned int total_secs = sbi->total_sections;
+ 	unsigned int segno, secno, zoneno;
+-	unsigned int total_zones = sbi->total_sections / sbi->secs_per_zone;
++	unsigned int total_zones = TOTAL_SECS(sbi) / sbi->secs_per_zone;
+ 	unsigned int hint = *newseg / sbi->segs_per_sec;
+ 	unsigned int old_zoneno = GET_ZONENO_FROM_SEGNO(sbi, *newseg);
+ 	unsigned int left_start = hint;
+@@ -367,12 +366,12 @@ static void get_new_segment(struct f2fs_sb_info *sbi,
+ 			goto got_it;
+ 	}
+ find_other_zone:
+-	secno = find_next_zero_bit(free_i->free_secmap, total_secs, hint);
+-	if (secno >= total_secs) {
++	secno = find_next_zero_bit(free_i->free_secmap, TOTAL_SECS(sbi), hint);
++	if (secno >= TOTAL_SECS(sbi)) {
+ 		if (dir == ALLOC_RIGHT) {
+ 			secno = find_next_zero_bit(free_i->free_secmap,
+-						total_secs, 0);
+-			BUG_ON(secno >= total_secs);
++							TOTAL_SECS(sbi), 0);
++			BUG_ON(secno >= TOTAL_SECS(sbi));
+ 		} else {
+ 			go_left = 1;
+ 			left_start = hint - 1;
+@@ -387,8 +386,8 @@ find_other_zone:
+ 			continue;
+ 		}
+ 		left_start = find_next_zero_bit(free_i->free_secmap,
+-						total_secs, 0);
+-		BUG_ON(left_start >= total_secs);
++							TOTAL_SECS(sbi), 0);
++		BUG_ON(left_start >= TOTAL_SECS(sbi));
+ 		break;
+ 	}
+ 	secno = left_start;
+@@ -1390,7 +1389,7 @@ static int build_sit_info(struct f2fs_sb_info *sbi)
+ 	}
+ 
+ 	if (sbi->segs_per_sec > 1) {
+-		sit_i->sec_entries = vzalloc(sbi->total_sections *
++		sit_i->sec_entries = vzalloc(TOTAL_SECS(sbi) *
+ 					sizeof(struct sec_entry));
+ 		if (!sit_i->sec_entries)
+ 			return -ENOMEM;
+@@ -1441,7 +1440,7 @@ static int build_free_segmap(struct f2fs_sb_info *sbi)
+ 	if (!free_i->free_segmap)
+ 		return -ENOMEM;
+ 
+-	sec_bitmap_size = f2fs_bitmap_size(sbi->total_sections);
++	sec_bitmap_size = f2fs_bitmap_size(TOTAL_SECS(sbi));
+ 	free_i->free_secmap = kmalloc(sec_bitmap_size, GFP_KERNEL);
+ 	if (!free_i->free_secmap)
+ 		return -ENOMEM;
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index c0d7740..fea9245 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -81,6 +81,7 @@
+ #define f2fs_bitmap_size(nr)			\
+ 	(BITS_TO_LONGS(nr) * sizeof(unsigned long))
+ #define TOTAL_SEGS(sbi)	(SM_I(sbi)->main_segments)
++#define TOTAL_SECS(sbi)	(sbi->total_sections)
+ 
+ #define SECTOR_FROM_BLOCK(sbi, blk_addr)				\
+ 	(blk_addr << ((sbi)->log_blocksize - F2FS_LOG_SECTOR_SIZE))
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,56 @@
+From fb0d09e860101c88cb750990065d228be8de72c6 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Fri, 25 Jan 2013 16:08:53 -0500
+Subject: [PATCH] f2fs: switch init_inode_metadata() to passing parent and name
+ separately
+
+... sure, it's tempting to just pass dentry.  Except that we don't
+_have_ anything resembling a real dentry on one of the paths to it.
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+---
+ fs/f2fs/dir.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index b733e2b..300f064 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -281,13 +281,12 @@ void init_dent_inode(const struct qstr *name, struct page *ipage)
+ 	set_page_dirty(ipage);
+ }
+ 
+-static int init_inode_metadata(struct inode *inode, struct dentry *dentry)
++static int init_inode_metadata(struct inode *inode,
++		struct inode *dir, const struct qstr *name)
+ {
+-	struct inode *dir = dentry->d_parent->d_inode;
+-
+ 	if (is_inode_flag_set(F2FS_I(inode), FI_NEW_INODE)) {
+ 		int err;
+-		err = new_inode_page(inode, &dentry->d_name);
++		err = new_inode_page(inode, name);
+ 		if (err)
+ 			return err;
+ 
+@@ -310,7 +309,7 @@ static int init_inode_metadata(struct inode *inode, struct dentry *dentry)
+ 		if (IS_ERR(ipage))
+ 			return PTR_ERR(ipage);
+ 		set_cold_node(inode, ipage);
+-		init_dent_inode(&dentry->d_name, ipage);
++		init_dent_inode(name, ipage);
+ 		f2fs_put_page(ipage, 1);
+ 	}
+ 	if (is_inode_flag_set(F2FS_I(inode), FI_INC_LINK)) {
+@@ -433,7 +432,7 @@ start:
+ 	++level;
+ 	goto start;
+ add_dentry:
+-	err = init_inode_metadata(inode, dentry);
++	err = init_inode_metadata(inode, dir, &dentry->d_name);
+ 	if (err)
+ 		goto fail;
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

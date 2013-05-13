@@ -1,0 +1,32 @@
+From fc1004870b79a486a7197327d517e6a14553fbd1 Mon Sep 17 00:00:00 2001
+From: Changman Lee <cm224.lee@samsung.com>
+Date: Wed, 20 Feb 2013 07:47:06 +0900
+Subject: [PATCH] f2fs: check the level before calling get_nid function
+
+The caller of get_nid should be careful not to put lower value than
+NODE_DIR1_BLOCK in case of level is zero.
+
+Signed-off-by: Changman Lee <cm224.lee@samsung.com>
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 65ec2ea..d408e69 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -403,7 +403,8 @@ int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int mode)
+ 		return PTR_ERR(npage[0]);
+ 
+ 	parent = npage[0];
+-	nids[1] = get_nid(parent, offset[0], true);
++	if (level != 0)
++		nids[1] = get_nid(parent, offset[0], true);
+ 	dn->inode_page = npage[0];
+ 	dn->inode_page_locked = true;
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

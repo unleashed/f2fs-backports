@@ -1,0 +1,32 @@
+From 57d9daa5447cde7bbe8c174adb9c2e369cdd3aaf Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 12 Feb 2013 07:28:55 +0900
+Subject: [PATCH] f2fs: avoid build warning
+
+This patch removes the following build warning:
+fs/f2fs/node.c: warning: 'nofs' may be used uninitialized in this function
+[-Wuninitialized]:  => 738:8
+
+Note that this is a false alarm.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 0da252c..e275218 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -660,7 +660,7 @@ int truncate_inode_blocks(struct inode *inode, pgoff_t from)
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	int err = 0, cont = 1;
+ 	int level, offset[4], noffset[4];
+-	unsigned int nofs;
++	unsigned int nofs = 0;
+ 	struct f2fs_node *rn;
+ 	struct dnode_of_data dn;
+ 	struct page *page;
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,111 @@
+From 45c6ee5c1757e1b0a536ced74edbc29c9d225ea8 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 10 Dec 2012 17:52:48 +0900
+Subject: [PATCH] f2fs: fix tracking parent inode number
+
+Previously, f2fs didn't track the parent inode number correctly which is stored
+in each f2fs_inode. In the case of the following scenario, a bug can be occured.
+
+Let's suppose there are one directory, "/b", and two files, "/a" and "/b/a".
+ - pino of "/a" is ROOT_INO.
+ - pino of "/b/a" is DIR_B_INO.
+
+Then,
+ # sync
+  : The inode pages of "/a" and "/b/a" contain the parent inode numbers as
+    ROOT_INO and DIR_B_INO respectively.
+ # mv /a /b/a
+  : The parent inode number of "/a" should be changed to DIR_B_INO, but f2fs
+    didn't do that. Ref. f2fs_set_link().
+
+In order to fix this clearly, I added i_pino in f2fs_inode_info, and whenever
+it needs to be changed like in f2fs_add_link() and f2fs_set_link(), it is
+updated temporarily in f2fs_inode_info.
+
+And later, f2fs_write_inode() stores the latest information to the inode pages.
+For power-off-recovery, f2fs_sync_file() triggers simply f2fs_write_inode().
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/dir.c   | 10 ++++++++--
+ fs/f2fs/f2fs.h  |  1 +
+ fs/f2fs/inode.c |  2 ++
+ 3 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index d900c08..b4e24f3 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -256,13 +256,16 @@ void f2fs_set_link(struct inode *dir, struct f2fs_dir_entry *de,
+ 	set_page_dirty(page);
+ 	dir->i_mtime = dir->i_ctime = CURRENT_TIME;
+ 	mark_inode_dirty(dir);
++
++	/* update parent inode number before releasing dentry page */
++	F2FS_I(inode)->i_pino = dir->i_ino;
++
+ 	f2fs_put_page(page, 1);
+ 	mutex_unlock_op(sbi, DENTRY_OPS);
+ }
+ 
+ void init_dent_inode(struct dentry *dentry, struct page *ipage)
+ {
+-	struct inode *dir = dentry->d_parent->d_inode;
+ 	struct f2fs_node *rn;
+ 
+ 	if (IS_ERR(ipage))
+@@ -272,7 +275,6 @@ void init_dent_inode(struct dentry *dentry, struct page *ipage)
+ 
+ 	/* copy dentry info. to this inode page */
+ 	rn = (struct f2fs_node *)page_address(ipage);
+-	rn->i.i_pino = cpu_to_le32(dir->i_ino);
+ 	rn->i.i_namelen = cpu_to_le32(dentry->d_name.len);
+ 	memcpy(rn->i.i_name, dentry->d_name.name, dentry->d_name.len);
+ 	set_page_dirty(ipage);
+@@ -444,7 +446,11 @@ add_dentry:
+ 	for (i = 0; i < slots; i++)
+ 		test_and_set_bit_le(bit_pos + i, &dentry_blk->dentry_bitmap);
+ 	set_page_dirty(dentry_page);
++
+ 	update_parent_metadata(dir, inode, current_depth);
++
++	/* update parent inode number before releasing dentry page */
++	F2FS_I(inode)->i_pino = dir->i_ino;
+ fail:
+ 	kunmap(dentry_page);
+ 	f2fs_put_page(dentry_page, 1);
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 2bce3a6..a18d63d 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -136,6 +136,7 @@ struct f2fs_inode_info {
+ 	unsigned long i_flags;		/* keep an inode flags for ioctl */
+ 	unsigned char i_advise;		/* use to give file attribute hints */
+ 	unsigned int i_current_depth;	/* use only in directory structure */
++	unsigned int i_pino;		/* parent inode number */
+ 	umode_t i_acl_mode;		/* keep file acl mode temporarily */
+ 
+ 	/* Use below internally in f2fs*/
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index aa4ef4f..df5fb38 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -107,6 +107,7 @@ static int do_read_inode(struct inode *inode)
+ 	fi->flags = 0;
+ 	fi->data_version = le64_to_cpu(F2FS_CKPT(sbi)->checkpoint_ver) - 1;
+ 	fi->i_advise = ri->i_advise;
++	fi->i_pino = le32_to_cpu(ri->i_pino);
+ 	get_extent_info(&fi->ext, ri->i_ext);
+ 	f2fs_put_page(node_page, 1);
+ 	return 0;
+@@ -200,6 +201,7 @@ void update_inode(struct inode *inode, struct page *node_page)
+ 	ri->i_current_depth = cpu_to_le32(F2FS_I(inode)->i_current_depth);
+ 	ri->i_xattr_nid = cpu_to_le32(F2FS_I(inode)->i_xattr_nid);
+ 	ri->i_flags = cpu_to_le32(F2FS_I(inode)->i_flags);
++	ri->i_pino = cpu_to_le32(F2FS_I(inode)->i_pino);
+ 	ri->i_generation = cpu_to_le32(inode->i_generation);
+ 	set_page_dirty(node_page);
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

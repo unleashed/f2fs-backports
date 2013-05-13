@@ -1,0 +1,56 @@
+From 452460a6fab2b9041976a02e51b7b16109d4f1cf Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 25 Apr 2013 13:24:33 +0900
+Subject: [PATCH] f2fs: add a tracepoint on f2fs_new_inode
+
+This can help when debugging the free nid allocation flows.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/namei.c             | 3 ++-
+ include/trace/events/f2fs.h | 7 +++++++
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index c57fd18..4aa26e5 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -63,7 +63,7 @@ static struct inode *f2fs_new_inode(struct inode *dir, umode_t mode)
+ 		nid_free = true;
+ 		goto out;
+ 	}
+-
++	trace_f2fs_new_inode(inode, 0);
+ 	mark_inode_dirty(inode);
+ 	return inode;
+ 
+@@ -71,6 +71,7 @@ out:
+ 	clear_nlink(inode);
+ 	unlock_new_inode(inode);
+ fail:
++	trace_f2fs_new_inode(inode, err);
+ 	iput(inode);
+ 	if (nid_free)
+ 		alloc_nid_failed(sbi, ino);
+diff --git a/include/trace/events/f2fs.h b/include/trace/events/f2fs.h
+index b2b2f72..52ae548 100644
+--- a/include/trace/events/f2fs.h
++++ b/include/trace/events/f2fs.h
+@@ -197,6 +197,13 @@ DEFINE_EVENT(f2fs__inode, f2fs_evict_inode,
+ 	TP_ARGS(inode)
+ );
+ 
++DEFINE_EVENT(f2fs__inode_exit, f2fs_new_inode,
++
++	TP_PROTO(struct inode *inode, int ret),
++
++	TP_ARGS(inode, ret)
++);
++
+ TRACE_EVENT(f2fs_unlink_enter,
+ 
+ 	TP_PROTO(struct inode *dir, struct dentry *dentry),
+-- 
+1.8.2.1.422.gdcd8c09
+

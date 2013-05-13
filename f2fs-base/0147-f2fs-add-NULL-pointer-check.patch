@@ -1,0 +1,39 @@
+From 2f706d0342ff7e4206d7c0fc369314a83eeb04ef Mon Sep 17 00:00:00 2001
+From: P J P <ppandit@redhat.com>
+Date: Wed, 3 Apr 2013 11:38:00 +0900
+Subject: [PATCH] f2fs: add NULL pointer check
+
+Commit - fa9150a84c - replaces a call to generic_writepages() in
+f2fs_write_data_pages() with write_cache_pages(), with a function pointer
+argument pointing to routine: __f2fs_writepage.
+
+  -> https://git.kernel.org/linus/fa9150a84ca333f68127097c4fa1eda4b3913a22
+
+  This patch adds a NULL pointer check in f2fs_write_data_pages() to avoid
+  a possible NULL pointer dereference, in case if - mapping->a_ops->writepage -
+  is NULL.
+
+Signed-off-by: P J P <ppandit@redhat.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 829fd58..a265760 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -560,6 +560,10 @@ static int f2fs_write_data_pages(struct address_space *mapping,
+ 	int ret;
+ 	long excess_nrtw = 0, desired_nrtw;
+ 
++	/* deal with chardevs and other special file */
++	if (!mapping->a_ops->writepage)
++		return 0;
++
+ 	if (wbc->nr_to_write < MAX_DESIRED_PAGES_WP) {
+ 		desired_nrtw = MAX_DESIRED_PAGES_WP;
+ 		excess_nrtw = desired_nrtw - wbc->nr_to_write;
+-- 
+1.8.2.1.422.gdcd8c09
+

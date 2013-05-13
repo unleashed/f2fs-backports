@@ -1,0 +1,90 @@
+From 3f03857c3be81a6281e38646ca84496a801a4904 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Tue, 23 Apr 2013 18:26:54 +0900
+Subject: [PATCH] f2fs: add tracepoints to debug checkpoint request
+
+Add tracepoints to debug checkpoint request.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Pankaj Kumar <pankaj.km@samsung.com>
+Acked-by: Steven Rostedt <rostedt@goodmis.org>
+[Jaegeuk: change expressions]
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c        |  7 +++++++
+ include/trace/events/f2fs.h | 24 ++++++++++++++++++++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index be6aa2e..f54b83b 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -20,6 +20,7 @@
+ #include "f2fs.h"
+ #include "node.h"
+ #include "segment.h"
++#include <trace/events/f2fs.h>
+ 
+ static struct kmem_cache *orphan_entry_slab;
+ static struct kmem_cache *inode_entry_slab;
+@@ -714,9 +715,13 @@ void write_checkpoint(struct f2fs_sb_info *sbi, bool is_umount)
+ 	struct f2fs_checkpoint *ckpt = F2FS_CKPT(sbi);
+ 	unsigned long long ckpt_ver;
+ 
++	trace_f2fs_write_checkpoint(sbi->sb, is_umount, "start block_ops");
++
+ 	mutex_lock(&sbi->cp_mutex);
+ 	block_operations(sbi);
+ 
++	trace_f2fs_write_checkpoint(sbi->sb, is_umount, "finish block_ops");
++
+ 	f2fs_submit_bio(sbi, DATA, true);
+ 	f2fs_submit_bio(sbi, NODE, true);
+ 	f2fs_submit_bio(sbi, META, true);
+@@ -738,6 +743,8 @@ void write_checkpoint(struct f2fs_sb_info *sbi, bool is_umount)
+ 
+ 	unblock_operations(sbi);
+ 	mutex_unlock(&sbi->cp_mutex);
++
++	trace_f2fs_write_checkpoint(sbi->sb, is_umount, "finish checkpoint");
+ }
+ 
+ void init_orphan_info(struct f2fs_sb_info *sbi)
+diff --git a/include/trace/events/f2fs.h b/include/trace/events/f2fs.h
+index ae2da92..b2b2f72 100644
+--- a/include/trace/events/f2fs.h
++++ b/include/trace/events/f2fs.h
+@@ -645,6 +645,30 @@ TRACE_EVENT(f2fs_submit_write_page,
+ 		(unsigned long long)__entry->block)
+ );
+ 
++TRACE_EVENT(f2fs_write_checkpoint,
++
++	TP_PROTO(struct super_block *sb, bool is_umount, char *msg),
++
++	TP_ARGS(sb, is_umount, msg),
++
++	TP_STRUCT__entry(
++		__field(dev_t,	dev)
++		__field(bool,	is_umount)
++		__field(char *,	msg)
++	),
++
++	TP_fast_assign(
++		__entry->dev		= sb->s_dev;
++		__entry->is_umount	= is_umount;
++		__entry->msg		= msg;
++	),
++
++	TP_printk("dev = (%d,%d), checkpoint for %s, state = %s",
++		show_dev(__entry),
++		__entry->is_umount ? "clean umount" : "consistency",
++		__entry->msg)
++);
++
+ #endif /* _TRACE_F2FS_H */
+ 
+  /* This part must be outside protection */
+-- 
+1.8.2.1.422.gdcd8c09
+

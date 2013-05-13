@@ -1,0 +1,47 @@
+From c2283553af0ba1f67c451660e7431b6c6f50d664 Mon Sep 17 00:00:00 2001
+From: Chris Fries <C.Fries@motorola.com>
+Date: Thu, 2 May 2013 16:09:05 -0500
+Subject: [PATCH] f2fs: recover when journal contains deleted files
+
+When recovering a journal file with fsync data for files that have
+been deleted, don't bail out on recovery.
+
+Signed-off-by: Chris Fries <C.Fries@motorola.com>
+Reviewed-by: Russell Knize <rknize2@motorola.com>
+Reviewed-by: Jason Hrycay <jason.hrycay@motorola.com>
+[Jaegeuk Kim: fit the coding style]
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/recovery.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index f16d12d..60c8a50 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -53,7 +53,7 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ 
+ 	dir = f2fs_iget(inode->i_sb, le32_to_cpu(raw_inode->i_pino));
+ 	if (IS_ERR(dir)) {
+-		err = -EINVAL;
++		err = PTR_ERR(dir);
+ 		goto out;
+ 	}
+ 
+@@ -156,8 +156,12 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 		}
+ 		if (IS_INODE(page)) {
+ 			err = recover_inode(entry->inode, page);
+-			if (err)
++			if (err == -ENOENT) {
++				goto next;
++			} else if (err) {
++				err = -EINVAL;
+ 				goto unlock_out;
++			}
+ 		}
+ next:
+ 		/* check next segment */
+-- 
+1.8.2.1.422.gdcd8c09
+

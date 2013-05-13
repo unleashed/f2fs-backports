@@ -1,0 +1,39 @@
+From e7ab592b14cf485f36eaa75c69e51f4aed6c8cc8 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 2 Mar 2013 12:40:50 +0900
+Subject: [PATCH] f2fs: optimize and change return path in lookup_free_nid_list
+
+Optimize and change return path in lookup_free_nid_list
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 58f7216..6006e8e 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1195,14 +1195,13 @@ const struct address_space_operations f2fs_node_aops = {
+ static struct free_nid *__lookup_free_nid_list(nid_t n, struct list_head *head)
+ {
+ 	struct list_head *this;
+-	struct free_nid *i = NULL;
++	struct free_nid *i;
+ 	list_for_each(this, head) {
+ 		i = list_entry(this, struct free_nid, list);
+ 		if (i->nid == n)
+-			break;
+-		i = NULL;
++			return i;
+ 	}
+-	return i;
++	return NULL;
+ }
+ 
+ static void __del_from_free_nid_list(struct free_nid *i)
+-- 
+1.8.2.1.422.gdcd8c09
+

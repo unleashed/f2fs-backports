@@ -1,0 +1,42 @@
+From 7e9b9e8f04a87bca6ea53c5177a04a33c00be861 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 25 Apr 2013 13:21:12 +0900
+Subject: [PATCH] f2fs: check nid == 0 in add_free_nid
+
+It is more obvious that add_free_nid checks whether the free nid is zero or not.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index a0aa044..c8f48d4 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1245,6 +1245,10 @@ static int add_free_nid(struct f2fs_nm_info *nm_i, nid_t nid)
+ 
+ 	if (nm_i->fcnt > 2 * MAX_FREE_NIDS)
+ 		return 0;
++
++	/* 0 nid should not be used */
++	if (nid == 0)
++		return 0;
+ retry:
+ 	i = kmem_cache_alloc(free_nid_slab, GFP_NOFS);
+ 	if (!i) {
+@@ -1286,10 +1290,6 @@ static int scan_nat_page(struct f2fs_nm_info *nm_i,
+ 	int fcnt = 0;
+ 	int i;
+ 
+-	/* 0 nid should not be used */
+-	if (start_nid == 0)
+-		++start_nid;
+-
+ 	i = start_nid % NAT_ENTRY_PER_BLOCK;
+ 
+ 	for (; i < NAT_ENTRY_PER_BLOCK; i++, start_nid++) {
+-- 
+1.8.2.1.422.gdcd8c09
+

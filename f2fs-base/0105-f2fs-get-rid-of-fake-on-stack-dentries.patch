@@ -1,0 +1,129 @@
+From adb00ffa87ab6dfbaf1b046a8812b5c60ff3962b Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Fri, 25 Jan 2013 16:15:43 -0500
+Subject: [PATCH] f2fs: get rid of fake on-stack dentries
+
+those should never be used for a lot of reasons...
+
+[alex: fixed conflicts in recovery.c]
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/dir.c      | 12 +++++-------
+ fs/f2fs/f2fs.h     |  8 +++++++-
+ fs/f2fs/recovery.c | 12 +++++-------
+ 3 files changed, 17 insertions(+), 15 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 300f064..c395c50 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -370,7 +370,7 @@ next:
+ 	goto next;
+ }
+ 
+-int f2fs_add_link(struct dentry *dentry, struct inode *inode)
++int __f2fs_add_link(struct inode *dir, const struct qstr *name, struct inode *inode)
+ {
+ 	unsigned int bit_pos;
+ 	unsigned int level;
+@@ -379,17 +379,15 @@ int f2fs_add_link(struct dentry *dentry, struct inode *inode)
+ 	f2fs_hash_t dentry_hash;
+ 	struct f2fs_dir_entry *de;
+ 	unsigned int nbucket, nblock;
+-	struct inode *dir = dentry->d_parent->d_inode;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
+-	const char *name = dentry->d_name.name;
+-	size_t namelen = dentry->d_name.len;
++	size_t namelen = name->len;
+ 	struct page *dentry_page = NULL;
+ 	struct f2fs_dentry_block *dentry_blk = NULL;
+ 	int slots = GET_DENTRY_SLOTS(namelen);
+ 	int err = 0;
+ 	int i;
+ 
+-	dentry_hash = f2fs_dentry_hash(name, dentry->d_name.len);
++	dentry_hash = f2fs_dentry_hash(name->name, name->len);
+ 	level = 0;
+ 	current_depth = F2FS_I(dir)->i_current_depth;
+ 	if (F2FS_I(dir)->chash == dentry_hash) {
+@@ -432,7 +430,7 @@ start:
+ 	++level;
+ 	goto start;
+ add_dentry:
+-	err = init_inode_metadata(inode, dir, &dentry->d_name);
++	err = init_inode_metadata(inode, dir, name);
+ 	if (err)
+ 		goto fail;
+ 
+@@ -441,7 +439,7 @@ add_dentry:
+ 	de = &dentry_blk->dentry[bit_pos];
+ 	de->hash_code = dentry_hash;
+ 	de->name_len = cpu_to_le16(namelen);
+-	memcpy(dentry_blk->filename[bit_pos], name, namelen);
++	memcpy(dentry_blk->filename[bit_pos], name->name, name->len);
+ 	de->ino = cpu_to_le32(inode->i_ino);
+ 	set_de_type(de, inode);
+ 	for (i = 0; i < slots; i++)
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 88e8e0f..cc2213a 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -890,11 +890,17 @@ ino_t f2fs_inode_by_name(struct inode *, struct qstr *);
+ void f2fs_set_link(struct inode *, struct f2fs_dir_entry *,
+ 				struct page *, struct inode *);
+ void init_dent_inode(const struct qstr *, struct page *);
+-int f2fs_add_link(struct dentry *, struct inode *);
++int __f2fs_add_link(struct inode *, const struct qstr *, struct inode *);
+ void f2fs_delete_entry(struct f2fs_dir_entry *, struct page *, struct inode *);
+ int f2fs_make_empty(struct inode *, struct inode *);
+ bool f2fs_empty_dir(struct inode *);
+ 
++static inline int f2fs_add_link(struct dentry *dentry, struct inode *inode)
++{
++	return __f2fs_add_link(dentry->d_parent->d_inode, &dentry->d_name,
++				inode);
++}
++
+ /*
+  * super.c
+  */
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 01e1a03..b235215 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -42,7 +42,7 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ {
+ 	struct f2fs_node *raw_node = (struct f2fs_node *)kmap(ipage);
+ 	struct f2fs_inode *raw_inode = &(raw_node->i);
+-	struct dentry dent, parent;
++	struct qstr name;
+ 	struct f2fs_dir_entry *de;
+ 	struct page *page;
+ 	struct inode *dir;
+@@ -57,17 +57,15 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ 		goto out;
+ 	}
+ 
+-	parent.d_inode = dir;
+-	dent.d_parent = &parent;
+-	dent.d_name.len = le32_to_cpu(raw_inode->i_namelen);
+-	dent.d_name.name = raw_inode->i_name;
++	name.len = le32_to_cpu(raw_inode->i_namelen);
++	name.name = raw_inode->i_name;
+ 
+-	de = f2fs_find_entry(dir, &dent.d_name, &page);
++	de = f2fs_find_entry(dir, &name, &page);
+ 	if (de) {
+ 		kunmap(page);
+ 		f2fs_put_page(page, 0);
+ 	} else {
+-		err = f2fs_add_link(&dent, inode);
++		err = __f2fs_add_link(dir, &name, inode);
+ 	}
+ 	iput(dir);
+ out:
+-- 
+1.8.2.1.422.gdcd8c09
+

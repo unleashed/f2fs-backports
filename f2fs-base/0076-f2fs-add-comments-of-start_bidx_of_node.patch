@@ -1,0 +1,35 @@
+From 55f2b1ba7bd86ff753a839d28e1854ed1b809e81 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 21 Jan 2013 17:34:21 +0900
+Subject: [PATCH] f2fs: add comments of start_bidx_of_node
+
+The caller of start_bidx_of_node() should give proper node offsets which
+point only direct node blocks. Otherwise, it is a caller's bug.
+This patch adds comments to make it clear.
+
+Reported-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 809cfec..c386910 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -424,7 +424,11 @@ next_step:
+ }
+ 
+ /*
+- * Calculate start block index that this node page contains
++ * Calculate start block index indicating the given node offset.
++ * Be careful, caller should give this node offset only indicating direct node
++ * blocks. If any node offsets, which point the other types of node blocks such
++ * as indirect or double indirect node blocks, are given, it must be a caller's
++ * bug.
+  */
+ block_t start_bidx_of_node(unsigned int node_ofs)
+ {
+-- 
+1.8.2.1.422.gdcd8c09
+

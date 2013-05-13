@@ -1,0 +1,94 @@
+From 720066691b07a9c73fcb5eed78429b935956f7a8 Mon Sep 17 00:00:00 2001
+From: Changman Lee <cm224.lee@samsung.com>
+Date: Tue, 29 Jan 2013 18:30:07 +0900
+Subject: [PATCH] f2fs: add un/freeze_fs into super_operations
+
+This patch supports ioctl FIFREEZE and FITHAW to snapshot filesystem.
+Before calling f2fs_freeze, all writers would be suspended and sync_fs
+would be completed. So no f2fs has to do something.
+Just background gc operation should be skipped due to generate dirty
+nodes and data until unfreeze.
+
+Signed-off-by: Changman Lee <cm224.lee@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c    |  5 +++++
+ fs/f2fs/inode.c |  2 ++
+ fs/f2fs/super.c | 18 ++++++++++++++++++
+ 3 files changed, 25 insertions(+)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index c386910..9b5d0aa 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -44,6 +44,11 @@ static int gc_thread_func(void *data)
+ 		if (kthread_should_stop())
+ 			break;
+ 
++		if (sbi->sb->s_writers.frozen >= SB_FREEZE_WRITE) {
++			wait_ms = GC_THREAD_MAX_SLEEP_TIME;
++			continue;
++		}
++
+ 		f2fs_balance_fs(sbi);
+ 
+ 		if (!test_opt(sbi, BG_GC))
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index 340a21b..62433c6 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -278,6 +278,7 @@ void f2fs_evict_inode(struct inode *inode)
+ 	if (inode->i_nlink || is_bad_inode(inode))
+ 		goto no_delete;
+ 
++	sb_start_intwrite(inode->i_sb);
+ 	set_inode_flag(F2FS_I(inode), FI_NO_ALLOC);
+ 	i_size_write(inode, 0);
+ 
+@@ -285,6 +286,7 @@ void f2fs_evict_inode(struct inode *inode)
+ 		f2fs_truncate(inode);
+ 
+ 	remove_inode_page(inode);
++	sb_end_intwrite(inode->i_sb);
+ no_delete:
+ 	clear_inode(inode);
+ }
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 25656b6..0b18aee 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -143,6 +143,22 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
+ 	return 0;
+ }
+ 
++static int f2fs_freeze(struct super_block *sb)
++{
++	int err;
++
++	if (sb->s_flags & MS_RDONLY)
++		return 0;
++
++	err = f2fs_sync_fs(sb, 1);
++	return err;
++}
++
++static int f2fs_unfreeze(struct super_block *sb)
++{
++	return 0;
++}
++
+ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
+ {
+ 	struct super_block *sb = dentry->d_sb;
+@@ -213,6 +229,8 @@ static struct super_operations f2fs_sops = {
+ 	.evict_inode	= f2fs_evict_inode,
+ 	.put_super	= f2fs_put_super,
+ 	.sync_fs	= f2fs_sync_fs,
++	.freeze_fs	= f2fs_freeze,
++	.unfreeze_fs	= f2fs_unfreeze,
+ 	.statfs		= f2fs_statfs,
+ };
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,33 @@
+From 9933917b1d1019a17e6650831ad8854bdb18689e Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 27 Nov 2012 14:36:14 +0900
+Subject: [PATCH] f2fs: update the f2fs document
+
+I moved the f2fs-tools.git into kernel.org.
+And I added a new mailing list, linux-f2fs-devel@lists.sourceforge.net.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ Documentation/filesystems/f2fs.txt | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/filesystems/f2fs.txt b/Documentation/filesystems/f2fs.txt
+index 6ce5407..dee3960 100644
+--- a/Documentation/filesystems/f2fs.txt
++++ b/Documentation/filesystems/f2fs.txt
+@@ -19,7 +19,11 @@ F2FS and its tools support various parameters not only for configuring on-disk
+ layout, but also for selecting allocation and cleaning algorithms.
+ 
+ The file system formatting tool, "mkfs.f2fs", is available from the following
+-download page:		http://sourceforge.net/projects/f2fs-tools/
++git tree:
++>> git://git.kernel.org/pub/scm/linux/kernel/git/jaegeuk/f2fs-tools.git
++
++For reporting bugs and sending patches, please use the following mailing list:
++>> linux-f2fs-devel@lists.sourceforge.net
+ 
+ ================================================================================
+ BACKGROUND AND DESIGN ISSUES
+-- 
+1.8.2.1.422.gdcd8c09
+

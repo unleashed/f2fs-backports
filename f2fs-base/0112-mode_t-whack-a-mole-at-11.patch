@@ -1,0 +1,43 @@
+From e8a2cfec0f1759d67740349face5f696c33b2742 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Fri, 29 Mar 2013 12:23:28 -0400
+Subject: [PATCH] mode_t, whack-a-mole at 11...
+
+[alex: trimmed down to f2fs code]
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/acl.c | 2 +-
+ fs/f2fs/dir.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index 137af42..44abc2f 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -299,7 +299,7 @@ int f2fs_acl_chmod(struct inode *inode)
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct posix_acl *acl;
+ 	int error;
+-	mode_t mode = get_inode_mode(inode);
++	umode_t mode = get_inode_mode(inode);
+ 
+ 	if (!test_opt(sbi, POSIX_ACL))
+ 		return 0;
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index a1f3844..1be9487 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -60,7 +60,7 @@ static unsigned char f2fs_type_by_mode[S_IFMT >> S_SHIFT] = {
+ 
+ static void set_de_type(struct f2fs_dir_entry *de, struct inode *inode)
+ {
+-	mode_t mode = inode->i_mode;
++	umode_t mode = inode->i_mode;
+ 	de->file_type = f2fs_type_by_mode[(mode & S_IFMT) >> S_SHIFT];
+ }
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

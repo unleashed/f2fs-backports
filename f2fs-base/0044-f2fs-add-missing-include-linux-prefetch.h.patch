@@ -1,0 +1,50 @@
+From 0570c6f44084494178c044e5d345777b688b715a Mon Sep 17 00:00:00 2001
+From: Geert Uytterhoeven <geert@linux-m68k.org>
+Date: Wed, 19 Dec 2012 22:19:30 +0100
+Subject: [PATCH] f2fs: add missing #include <linux/prefetch.h>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+m68k allmodconfig:
+
+fs/f2fs/data.c: In function ‘read_end_io’:
+fs/f2fs/data.c:311: error: implicit declaration of function ‘prefetchw’
+
+fs/f2fs/segment.c: In function ‘f2fs_end_io_write’:
+fs/f2fs/segment.c:628: error: implicit declaration of function ‘prefetchw’
+
+Signed-off-by: Geert Uytterhoeven <geert@linux-m68k.org>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c    | 1 +
+ fs/f2fs/segment.c | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 655aeab..3aa5ce7 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -16,6 +16,7 @@
+ #include <linux/backing-dev.h>
+ #include <linux/blkdev.h>
+ #include <linux/bio.h>
++#include <linux/prefetch.h>
+ 
+ #include "f2fs.h"
+ #include "node.h"
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 8bc1b6f..ca7b5ff 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -12,6 +12,7 @@
+ #include <linux/f2fs_fs.h>
+ #include <linux/bio.h>
+ #include <linux/blkdev.h>
++#include <linux/prefetch.h>
+ #include <linux/vmalloc.h>
+ 
+ #include "f2fs.h"
+-- 
+1.8.2.1.422.gdcd8c09
+

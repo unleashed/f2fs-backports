@@ -1,0 +1,137 @@
+From c27ae2a53f9a180c468a5a53894381999cbbd034 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Tue, 23 Apr 2013 16:42:53 +0900
+Subject: [PATCH] f2fs: add tracepoints for GC threads
+
+Add tracepoints for tracing the garbage collector
+threads in f2fs with status of collection & type.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Pankaj Kumar <pankaj.km@samsung.com>
+Acked-by: Steven Rostedt <rostedt@goodmis.org>
+[Jaegeuk: modify slightly to show information]
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c                |  5 +++
+ include/trace/events/f2fs.h | 75 +++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 80 insertions(+)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 37b05e1..1ca3324 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -23,6 +23,7 @@
+ #include "node.h"
+ #include "segment.h"
+ #include "gc.h"
++#include <trace/events/f2fs.h>
+ 
+ static struct kmem_cache *winode_slab;
+ 
+@@ -301,6 +302,10 @@ got_it:
+ 				set_bit(secno, dirty_i->victim_secmap);
+ 		}
+ 		*result = (p.min_segno / p.ofs_unit) * p.ofs_unit;
++
++		trace_f2fs_get_victim(sbi->sb, type, gc_type, &p,
++				sbi->cur_victim_sec,
++				prefree_segments(sbi), free_segments(sbi));
+ 	}
+ 	mutex_unlock(&dirty_i->seglist_lock);
+ 
+diff --git a/include/trace/events/f2fs.h b/include/trace/events/f2fs.h
+index 924e69a..6f7cf7a 100644
+--- a/include/trace/events/f2fs.h
++++ b/include/trace/events/f2fs.h
+@@ -18,6 +18,33 @@
+ 		{ WRITE_FLUSH,	"WRITE_FLUSH" },			\
+ 		{ WRITE_FUA, 	"WRITE_FUA" })
+ 
++#define show_data_type(type)						\
++	__print_symbolic(type,						\
++		{ CURSEG_HOT_DATA, 	"Hot DATA" },			\
++		{ CURSEG_WARM_DATA, 	"Warm DATA" },			\
++		{ CURSEG_COLD_DATA, 	"Cold DATA" },			\
++		{ CURSEG_HOT_NODE, 	"Hot NODE" },			\
++		{ CURSEG_WARM_NODE, 	"Warm NODE" },			\
++		{ CURSEG_COLD_NODE, 	"Cold NODE" },			\
++		{ NO_CHECK_TYPE, 	"No TYPE" })
++
++#define show_gc_type(type)						\
++	__print_symbolic(type,						\
++		{ FG_GC,	"Foreground GC" },			\
++		{ BG_GC,	"Background GC" })
++
++#define show_alloc_mode(type)						\
++	__print_symbolic(type,						\
++		{ LFS,	"LFS-mode" },					\
++		{ SSR,	"SSR-mode" })
++
++#define show_victim_policy(type)					\
++	__print_symbolic(type,						\
++		{ GC_GREEDY,	"Greedy" },				\
++		{ GC_CB,	"Cost-Benefit" })
++
++struct victim_sel_policy;
++
+ DECLARE_EVENT_CLASS(f2fs__inode,
+ 
+ 	TP_PROTO(struct inode *inode),
+@@ -439,6 +466,54 @@ TRACE_EVENT(f2fs_get_data_block,
+ 		__entry->ret)
+ );
+ 
++TRACE_EVENT(f2fs_get_victim,
++
++	TP_PROTO(struct super_block *sb, int type, int gc_type,
++			struct victim_sel_policy *p, unsigned int pre_victim,
++			unsigned int prefree, unsigned int free),
++
++	TP_ARGS(sb, type, gc_type, p, pre_victim, prefree, free),
++
++	TP_STRUCT__entry(
++		__field(dev_t,	dev)
++		__field(int,	type)
++		__field(int,	gc_type)
++		__field(int,	alloc_mode)
++		__field(int,	gc_mode)
++		__field(unsigned int,	victim)
++		__field(unsigned int,	ofs_unit)
++		__field(unsigned int,	pre_victim)
++		__field(unsigned int,	prefree)
++		__field(unsigned int,	free)
++	),
++
++	TP_fast_assign(
++		__entry->dev		= sb->s_dev;
++		__entry->type		= type;
++		__entry->gc_type	= gc_type;
++		__entry->alloc_mode	= p->alloc_mode;
++		__entry->gc_mode	= p->gc_mode;
++		__entry->victim		= p->min_segno;
++		__entry->ofs_unit	= p->ofs_unit;
++		__entry->pre_victim	= pre_victim;
++		__entry->prefree	= prefree;
++		__entry->free		= free;
++	),
++
++	TP_printk("dev = (%d,%d), type = %s, policy = (%s, %s, %s), victim = %u "
++		"ofs_unit = %u, pre_victim_secno = %d, prefree = %u, free = %u",
++		show_dev(__entry),
++		show_data_type(__entry->type),
++		show_gc_type(__entry->gc_type),
++		show_alloc_mode(__entry->alloc_mode),
++		show_victim_policy(__entry->gc_mode),
++		__entry->victim,
++		__entry->ofs_unit,
++		(int)__entry->pre_victim,
++		__entry->prefree,
++		__entry->free)
++);
++
+ #endif /* _TRACE_F2FS_H */
+ 
+  /* This part must be outside protection */
+-- 
+1.8.2.1.422.gdcd8c09
+

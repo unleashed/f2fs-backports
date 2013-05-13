@@ -1,0 +1,66 @@
+From 0a04a08abd06e6546010e9e7379a9be693b2228d Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 2 Feb 2013 23:52:28 +0900
+Subject: [PATCH] f2fs: name gc task as per the block device
+
+Currently GC task is started for each f2fs formatted/mounted device.
+But, when we check the task list, using 'ps', there is no distinguishing
+factor between the tasks. So, name the task as per the block device just
+like the flusher threads.
+Also, remove the macro GC_THREAD_NAME and instead use the name: f2fs_gc
+to avoid name length truncation, as the command length is 16
+-> TASK_COMM_LEN 16 and example name like:
+f2fs_gc_task:8:16 -> this exceeds name length
+
+Before Patch for 2 F2FS formatted partitions:
+root  28061  0.0  0.0  0 0 ? S 10:31   0:00 [f2fs_gc_task]
+root  28087  0.0  0.0  0 0 ? S 10:32   0:00 [f2fs_gc_task]
+
+After Patch:
+root  16756  0.0  0.0  0  0 ?  S  14:57   0:00 [f2fs_gc-8:18]
+root  16765  0.0  0.0  0  0 ?  S  14:57   0:00 [f2fs_gc-8:19]
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 3 ++-
+ fs/f2fs/gc.h | 1 -
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 8d293cb..b1e4985 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -90,6 +90,7 @@ static int gc_thread_func(void *data)
+ int start_gc_thread(struct f2fs_sb_info *sbi)
+ {
+ 	struct f2fs_gc_kthread *gc_th;
++	dev_t dev = sbi->sb->s_bdev->bd_dev;
+ 
+ 	if (!test_opt(sbi, BG_GC))
+ 		return 0;
+@@ -100,7 +101,7 @@ int start_gc_thread(struct f2fs_sb_info *sbi)
+ 	sbi->gc_thread = gc_th;
+ 	init_waitqueue_head(&sbi->gc_thread->gc_wait_queue_head);
+ 	sbi->gc_thread->f2fs_gc_task = kthread_run(gc_thread_func, sbi,
+-				GC_THREAD_NAME);
++			"f2fs_gc-%u:%u", MAJOR(dev), MINOR(dev));
+ 	if (IS_ERR(gc_th->f2fs_gc_task)) {
+ 		kfree(gc_th);
+ 		return -ENOMEM;
+diff --git a/fs/f2fs/gc.h b/fs/f2fs/gc.h
+index b026d93..3abdf83 100644
+--- a/fs/f2fs/gc.h
++++ b/fs/f2fs/gc.h
+@@ -8,7 +8,6 @@
+  * it under the terms of the GNU General Public License version 2 as
+  * published by the Free Software Foundation.
+  */
+-#define GC_THREAD_NAME	"f2fs_gc_task"
+ #define GC_THREAD_MIN_WB_PAGES		1	/*
+ 						 * a threshold to determine
+ 						 * whether IO subsystem is idle
+-- 
+1.8.2.1.422.gdcd8c09
+

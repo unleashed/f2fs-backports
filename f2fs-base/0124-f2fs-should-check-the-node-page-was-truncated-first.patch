@@ -1,0 +1,52 @@
+From da1355dcd967efb314d16fd8076fe1a4f64fe28f Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 13 Mar 2013 17:49:22 +0900
+Subject: [PATCH] f2fs: should check the node page was truncated first
+
+Currently, f2fs doesn't reclaim any node pages.
+However, if we found that a node page was truncated by checking its block
+address with zero during f2fs_write_node_page, we should not skip that node
+page and return zero to reclaim it.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 9e6ed67..90221cc 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1097,13 +1097,6 @@ static int f2fs_write_node_page(struct page *page,
+ 	block_t new_addr;
+ 	struct node_info ni;
+ 
+-	if (wbc->for_reclaim) {
+-		dec_page_count(sbi, F2FS_DIRTY_NODES);
+-		wbc->pages_skipped++;
+-		set_page_dirty(page);
+-		return AOP_WRITEPAGE_ACTIVATE;
+-	}
+-
+ 	wait_on_page_writeback(page);
+ 
+ 	mutex_lock_op(sbi, NODE_WRITE);
+@@ -1118,6 +1111,14 @@ static int f2fs_write_node_page(struct page *page,
+ 	if (ni.blk_addr == NULL_ADDR)
+ 		goto out;
+ 
++	if (wbc->for_reclaim) {
++		dec_page_count(sbi, F2FS_DIRTY_NODES);
++		wbc->pages_skipped++;
++		set_page_dirty(page);
++		mutex_unlock_op(sbi, NODE_WRITE);
++		return AOP_WRITEPAGE_ACTIVATE;
++	}
++
+ 	set_page_writeback(page);
+ 
+ 	/* insert node offset */
+-- 
+1.8.2.1.422.gdcd8c09
+

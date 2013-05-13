@@ -1,0 +1,33 @@
+From 40f52e52b6036ad9e981daf0b42f78bf7e7b1380 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 12 Jan 2013 14:41:33 +0900
+Subject: [PATCH] f2fs: avoid redundant time update for parent directory in
+ f2fs_delete_entry
+
+In call to f2fs_delete_entry, 'dir' time modification code is put
+at two places.
+So, remove the redundant code for timing update.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/dir.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 951ed52..989980e 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -503,7 +503,7 @@ void f2fs_delete_entry(struct f2fs_dir_entry *dentry, struct page *page,
+ 	}
+ 
+ 	if (inode) {
+-		inode->i_ctime = dir->i_ctime = dir->i_mtime = CURRENT_TIME;
++		inode->i_ctime = CURRENT_TIME;
+ 		drop_nlink(inode);
+ 		if (S_ISDIR(inode->i_mode)) {
+ 			drop_nlink(inode);
+-- 
+1.8.2.1.422.gdcd8c09
+

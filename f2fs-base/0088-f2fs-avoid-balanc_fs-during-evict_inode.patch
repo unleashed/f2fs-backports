@@ -1,0 +1,165 @@
+From d225beebcafb2a9bdbae6634d52b7c368cef4efe Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 31 Jan 2013 15:36:04 +0900
+Subject: [PATCH] f2fs: avoid balanc_fs during evict_inode
+
+1. Background
+
+Previously, if f2fs tries to move data blocks of an *evicting* inode during the
+cleaning process, it stops the process incompletely and then restarts the whole
+process, since it needs a locked inode to grab victim data pages in its address
+space. In order to get a locked inode, iget_locked() by f2fs_iget() is normally
+used, but, it waits if the inode is on freeing.
+
+So, here is a deadlock scenario.
+1. f2fs_evict_inode()       <- inode "A"
+  2. f2fs_balance_fs()
+    3. f2fs_gc()
+      4. gc_data_segment()
+        5. f2fs_iget()      <- inode "A" too!
+
+If step #1 and #5 treat a same inode "A", step #5 would fall into deadlock since
+the inode "A" is on freeing. In order to resolve this, f2fs_iget_nowait() which
+skips __wait_on_freeing_inode() was introduced in step #5, and stops f2fs_gc()
+to complete f2fs_evict_inode().
+
+1. f2fs_evict_inode()           <- inode "A"
+  2. f2fs_balance_fs()
+    3. f2fs_gc()
+      4. gc_data_segment()
+        5. f2fs_iget_nowait()   <- inode "A", then stop f2fs_gc() w/ -ENOENT
+
+2. Problem and Solution
+
+In the above scenario, however, f2fs cannot finish f2fs_evict_inode() only if:
+ o there are not enough free sections, and
+ o f2fs_gc() tries to move data blocks of the *evicting* inode repeatedly.
+
+So, the final solution is to use f2fs_iget() and remove f2fs_balance_fs() in
+f2fs_evict_inode().
+The f2fs_evict_inode() actually truncates all the data and node blocks, which
+means that it doesn't produce any dirty node pages accordingly.
+So, we don't need to do f2fs_balance_fs() in practical.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h     |  1 -
+ fs/f2fs/file.c     |  3 +--
+ fs/f2fs/gc.c       |  2 +-
+ fs/f2fs/inode.c    | 33 ---------------------------------
+ fs/f2fs/recovery.c |  2 +-
+ 5 files changed, 3 insertions(+), 38 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 975cb44..5022a7d 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -847,7 +847,6 @@ long f2fs_ioctl(struct file *, unsigned int, unsigned long);
+  * inode.c
+  */
+ void f2fs_set_inode_flags(struct inode *);
+-struct inode *f2fs_iget_nowait(struct super_block *, unsigned long);
+ struct inode *f2fs_iget(struct super_block *, unsigned long);
+ void update_inode(struct inode *, struct page *);
+ int f2fs_write_inode(struct inode *, struct writeback_control *);
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 6cdab2c..3efa473 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -298,8 +298,6 @@ void f2fs_truncate(struct inode *inode)
+ 		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+ 		mark_inode_dirty(inode);
+ 	}
+-
+-	f2fs_balance_fs(F2FS_SB(inode->i_sb));
+ }
+ 
+ static int f2fs_getattr(struct vfsmount *mnt,
+@@ -356,6 +354,7 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
+ 			attr->ia_size != i_size_read(inode)) {
+ 		truncate_setsize(inode, attr->ia_size);
+ 		f2fs_truncate(inode);
++		f2fs_balance_fs(F2FS_SB(inode->i_sb));
+ 	}
+ 
+ 	__setattr_copy(inode, attr);
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index fb03be6..375e69e 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -579,7 +579,7 @@ next_step:
+ 		ofs_in_node = le16_to_cpu(entry->ofs_in_node);
+ 
+ 		if (phase == 2) {
+-			inode = f2fs_iget_nowait(sb, dni.ino);
++			inode = f2fs_iget(sb, dni.ino);
+ 			if (IS_ERR(inode))
+ 				continue;
+ 
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index 62433c6..ddae412 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -16,11 +16,6 @@
+ #include "f2fs.h"
+ #include "node.h"
+ 
+-struct f2fs_iget_args {
+-	u64 ino;
+-	int on_free;
+-};
+-
+ void f2fs_set_inode_flags(struct inode *inode)
+ {
+ 	unsigned int flags = F2FS_I(inode)->i_flags;
+@@ -40,34 +35,6 @@ void f2fs_set_inode_flags(struct inode *inode)
+ 		inode->i_flags |= S_DIRSYNC;
+ }
+ 
+-static int f2fs_iget_test(struct inode *inode, void *data)
+-{
+-	struct f2fs_iget_args *args = data;
+-
+-	if (inode->i_ino != args->ino)
+-		return 0;
+-	if (inode->i_state & (I_FREEING | I_WILL_FREE)) {
+-		args->on_free = 1;
+-		return 0;
+-	}
+-	return 1;
+-}
+-
+-struct inode *f2fs_iget_nowait(struct super_block *sb, unsigned long ino)
+-{
+-	struct f2fs_iget_args args = {
+-		.ino = ino,
+-		.on_free = 0
+-	};
+-	struct inode *inode = ilookup5(sb, ino, f2fs_iget_test, &args);
+-
+-	if (inode)
+-		return inode;
+-	if (!args.on_free)
+-		return f2fs_iget(sb, ino);
+-	return ERR_PTR(-ENOENT);
+-}
+-
+ static int do_read_inode(struct inode *inode)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index f42e406..e2a3e1a 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -226,7 +226,7 @@ static void check_index_in_prev_nodes(struct f2fs_sb_info *sbi,
+ 	f2fs_put_page(node_page, 1);
+ 
+ 	/* Deallocate previous index in the node page */
+-	inode = f2fs_iget_nowait(sbi->sb, ino);
++	inode = f2fs_iget(sbi->sb, ino);
+ 	if (IS_ERR(inode))
+ 		return;
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

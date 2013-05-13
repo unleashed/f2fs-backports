@@ -1,0 +1,45 @@
+From 6312d5e7ffe5b681533b105750648af93a53fb6e Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 17 Jan 2013 18:37:41 +0900
+Subject: [PATCH] f2fs: add remap_pages as generic_file_remap_pages
+
+This was added for all the file systems before.
+
+See the following commit.
+
+commit id: 0b173bc4daa8f8ec03a85abf5e47b23502ff80af
+
+[PATCH] mm: kill vma flag VM_CAN_NONLINEAR
+
+This patch moves actual ptes filling for non-linear file mappings
+into special vma operation: ->remap_pages().
+
+File system must implement this method to get non-linear mappings support,
+if it uses filemap_fault() then generic_file_remap_pages() can be used.
+
+Now device drivers can implement this method and obtain nonlinear vma support."
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/file.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 819de7f..3191b52 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -96,8 +96,9 @@ out:
+ }
+ 
+ static const struct vm_operations_struct f2fs_file_vm_ops = {
+-	.fault        = filemap_fault,
+-	.page_mkwrite = f2fs_vm_page_mkwrite,
++	.fault		= filemap_fault,
++	.page_mkwrite	= f2fs_vm_page_mkwrite,
++	.remap_pages	= generic_file_remap_pages,
+ };
+ 
+ static int need_to_sync_dir(struct f2fs_sb_info *sbi, struct inode *inode)
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,129 @@
+From e3f716825f711755ace5af17fe4a0a244ac131aa Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 10 Dec 2012 09:26:05 +0900
+Subject: [PATCH] f2fs: cleanup the f2fs_bio_alloc routine
+
+Do cleanup more for better code readability.
+
+- Change the parameter set of f2fs_bio_alloc()
+  This function should allocate a bio only since it is not something like
+  f2fs_bio_init(). Instead, the caller should initialize the allocated bio.
+
+- Introduce SECTOR_FROM_BLOCK
+  This macro translates a block address to its sector address.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+---
+ fs/f2fs/data.c    |  5 +++--
+ fs/f2fs/f2fs.h    |  2 +-
+ fs/f2fs/segment.c | 33 ++++++++++++++++++---------------
+ fs/f2fs/segment.h |  3 +++
+ 4 files changed, 25 insertions(+), 18 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 444c2a6..655aeab 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -343,11 +343,12 @@ int f2fs_readpage(struct f2fs_sb_info *sbi, struct page *page,
+ 	down_read(&sbi->bio_sem);
+ 
+ 	/* Allocate a new bio */
+-	bio = f2fs_bio_alloc(bdev, blk_addr << (sbi->log_blocksize - 9),
+-				1, GFP_NOFS | __GFP_HIGH);
++	bio = f2fs_bio_alloc(bdev, 1);
+ 
+ 	/* Initialize the bio */
++	bio->bi_sector = SECTOR_FROM_BLOCK(sbi, blk_addr);
+ 	bio->bi_end_io = read_end_io;
++
+ 	if (bio_add_page(bio, page, PAGE_CACHE_SIZE, 0) < PAGE_CACHE_SIZE) {
+ 		kfree(bio->bi_private);
+ 		bio_put(bio);
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 8c3f1ef..2bce3a6 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -924,7 +924,7 @@ void clear_prefree_segments(struct f2fs_sb_info *);
+ int npages_for_summary_flush(struct f2fs_sb_info *);
+ void allocate_new_segments(struct f2fs_sb_info *);
+ struct page *get_sum_page(struct f2fs_sb_info *, unsigned int);
+-struct bio *f2fs_bio_alloc(struct block_device *, sector_t, int, gfp_t);
++struct bio *f2fs_bio_alloc(struct block_device *, int);
+ void f2fs_submit_bio(struct f2fs_sb_info *, enum page_type, bool sync);
+ int write_meta_page(struct f2fs_sb_info *, struct page *,
+ 					struct writeback_control *);
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 8894b39..1b26e4e 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -643,23 +643,21 @@ static void f2fs_end_io_write(struct bio *bio, int err)
+ 	bio_put(bio);
+ }
+ 
+-struct bio *f2fs_bio_alloc(struct block_device *bdev, sector_t first_sector,
+-					int nr_vecs, gfp_t gfp_flags)
++struct bio *f2fs_bio_alloc(struct block_device *bdev, int npages)
+ {
+ 	struct bio *bio;
+-
+-	/* allocate new bio */
+-	bio = bio_alloc(gfp_flags, nr_vecs);
+-
+-	bio->bi_bdev = bdev;
+-	bio->bi_sector = first_sector;
++	struct bio_private *priv;
+ retry:
+-	bio->bi_private = kmalloc(sizeof(struct bio_private),
+-					GFP_NOFS | __GFP_HIGH);
+-	if (!bio->bi_private) {
++	priv = kmalloc(sizeof(struct bio_private), GFP_NOFS);
++	if (!priv) {
+ 		cond_resched();
+ 		goto retry;
+ 	}
++
++	/* No failure on bio allocation */
++	bio = bio_alloc(GFP_NOIO, npages);
++	bio->bi_bdev = bdev;
++	bio->bi_private = priv;
+ 	return bio;
+ }
+ 
+@@ -711,10 +709,15 @@ static void submit_write_page(struct f2fs_sb_info *sbi, struct page *page,
+ 	if (sbi->bio[type] && sbi->last_block_in_bio[type] != blk_addr - 1)
+ 		do_submit_bio(sbi, type, false);
+ alloc_new:
+-	if (sbi->bio[type] == NULL)
+-		sbi->bio[type] = f2fs_bio_alloc(bdev,
+-				blk_addr << (sbi->log_blocksize - 9),
+-				bio_get_nr_vecs(bdev), GFP_NOFS | __GFP_HIGH);
++	if (sbi->bio[type] == NULL) {
++		sbi->bio[type] = f2fs_bio_alloc(bdev, bio_get_nr_vecs(bdev));
++		sbi->bio[type]->bi_sector = SECTOR_FROM_BLOCK(sbi, blk_addr);
++		/*
++		 * The end_io will be assigned at the sumbission phase.
++		 * Until then, let bio_add_page() merge consecutive IOs as much
++		 * as possible.
++		 */
++	}
+ 
+ 	if (bio_add_page(sbi->bio[type], page, PAGE_CACHE_SIZE, 0) <
+ 							PAGE_CACHE_SIZE) {
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index 2c445f8..0948405 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -82,6 +82,9 @@
+ 	(BITS_TO_LONGS(nr) * sizeof(unsigned long))
+ #define TOTAL_SEGS(sbi)	(SM_I(sbi)->main_segments)
+ 
++#define SECTOR_FROM_BLOCK(sbi, blk_addr)				\
++	(blk_addr << ((sbi)->log_blocksize - F2FS_LOG_SECTOR_SIZE))
++
+ /* during checkpoint, bio_private is used to synchronize the last bio */
+ struct bio_private {
+ 	struct f2fs_sb_info *sbi;
+-- 
+1.8.2.1.422.gdcd8c09
+

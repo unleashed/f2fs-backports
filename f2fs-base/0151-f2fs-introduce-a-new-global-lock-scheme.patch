@@ -1,0 +1,1344 @@
+From 3c42cdeb3c3763adc0c9a497a1b787e667a19166 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 22 Nov 2012 16:21:29 +0900
+Subject: [PATCH] f2fs: introduce a new global lock scheme
+
+In the previous version, f2fs uses global locks according to the usage types,
+such as directory operations, block allocation, block write, and so on.
+
+Reference the following lock types in f2fs.h.
+enum lock_type {
+	RENAME,		/* for renaming operations */
+	DENTRY_OPS,	/* for directory operations */
+	DATA_WRITE,	/* for data write */
+	DATA_NEW,	/* for data allocation */
+	DATA_TRUNC,	/* for data truncate */
+	NODE_NEW,	/* for node allocation */
+	NODE_TRUNC,	/* for node truncate */
+	NODE_WRITE,	/* for node write */
+	NR_LOCK_TYPE,
+};
+
+In that case, we lose the performance under the multi-threading environment,
+since every types of operations must be conducted one at a time.
+
+In order to address the problem, let's share the locks globally with a mutex
+array regardless of any types.
+So, let users grab a mutex and perform their jobs in parallel as much as
+possbile.
+
+For this, I propose a new global lock scheme as follows.
+
+0. Data structure
+ - f2fs_sb_info -> mutex_lock[NR_GLOBAL_LOCKS]
+ - f2fs_sb_info -> node_write
+
+1. mutex_lock_op(sbi)
+ - try to get an avaiable lock from the array.
+ - returns the index of the gottern lock variable.
+
+2. mutex_unlock_op(sbi, index of the lock)
+ - unlock the given index of the lock.
+
+3. mutex_lock_all(sbi)
+ - grab all the locks in the array before the checkpoint.
+
+4. mutex_unlock_all(sbi)
+ - release all the locks in the array after checkpoint.
+
+5. block_operations()
+ - call mutex_lock_all()
+ - sync_dirty_dir_inodes()
+ - grab node_write
+ - sync_node_pages()
+
+Note that,
+ the pairs of mutex_lock_op()/mutex_unlock_op() and
+ mutex_lock_all()/mutex_unlock_all() should be used together.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c |  39 ++++++-------------
+ fs/f2fs/data.c       |  77 +++++++++++++++++++------------------
+ fs/f2fs/dir.c        | 105 +++++++++++++++++++++++----------------------------
+ fs/f2fs/f2fs.h       |  63 ++++++++++++++++++++-----------
+ fs/f2fs/file.c       |  46 +++++++++++-----------
+ fs/f2fs/gc.c         |   2 -
+ fs/f2fs/inode.c      |  48 ++++++++++++-----------
+ fs/f2fs/namei.c      |  44 +++++++++++++--------
+ fs/f2fs/node.c       |  44 +++++++++------------
+ fs/f2fs/recovery.c   |   8 +++-
+ fs/f2fs/super.c      |   4 +-
+ fs/f2fs/xattr.c      |  10 +++--
+ 12 files changed, 248 insertions(+), 242 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 93fd57d..be6aa2e 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -543,54 +543,39 @@ retry:
+  */
+ static void block_operations(struct f2fs_sb_info *sbi)
+ {
+-	int t;
+ 	struct writeback_control wbc = {
+ 		.sync_mode = WB_SYNC_ALL,
+ 		.nr_to_write = LONG_MAX,
+ 		.for_reclaim = 0,
+ 	};
++retry_flush_dents:
++	mutex_lock_all(sbi);
+ 
+-	/* Stop renaming operation */
+-	mutex_lock_op(sbi, RENAME);
+-	mutex_lock_op(sbi, DENTRY_OPS);
+-
+-retry_dents:
+ 	/* write all the dirty dentry pages */
+-	sync_dirty_dir_inodes(sbi);
+-
+-	mutex_lock_op(sbi, DATA_WRITE);
+ 	if (get_pages(sbi, F2FS_DIRTY_DENTS)) {
+-		mutex_unlock_op(sbi, DATA_WRITE);
+-		goto retry_dents;
++		mutex_unlock_all(sbi);
++		sync_dirty_dir_inodes(sbi);
++		goto retry_flush_dents;
+ 	}
+ 
+-	/* block all the operations */
+-	for (t = DATA_NEW; t <= NODE_TRUNC; t++)
+-		mutex_lock_op(sbi, t);
+-
+-	mutex_lock(&sbi->write_inode);
+-
+ 	/*
+ 	 * POR: we should ensure that there is no dirty node pages
+ 	 * until finishing nat/sit flush.
+ 	 */
+-retry:
+-	sync_node_pages(sbi, 0, &wbc);
+-
+-	mutex_lock_op(sbi, NODE_WRITE);
++retry_flush_nodes:
++	mutex_lock(&sbi->node_write);
+ 
+ 	if (get_pages(sbi, F2FS_DIRTY_NODES)) {
+-		mutex_unlock_op(sbi, NODE_WRITE);
+-		goto retry;
++		mutex_unlock(&sbi->node_write);
++		sync_node_pages(sbi, 0, &wbc);
++		goto retry_flush_nodes;
+ 	}
+-	mutex_unlock(&sbi->write_inode);
+ }
+ 
+ static void unblock_operations(struct f2fs_sb_info *sbi)
+ {
+-	int t;
+-	for (t = NODE_WRITE; t >= RENAME; t--)
+-		mutex_unlock_op(sbi, t);
++	mutex_unlock(&sbi->node_write);
++	mutex_unlock_all(sbi);
+ }
+ 
+ static void do_checkpoint(struct f2fs_sb_info *sbi, bool is_umount)
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index a265760..7071424 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -261,6 +261,9 @@ struct page *get_lock_data_page(struct inode *inode, pgoff_t index)
+ /*
+  * Caller ensures that this data page is never allocated.
+  * A new zero-filled data page is allocated in the page cache.
++ *
++ * Also, caller should grab and release a mutex by calling mutex_lock_op() and
++ * mutex_unlock_op().
+  */
+ struct page *get_new_data_page(struct inode *inode, pgoff_t index,
+ 						bool new_i_size)
+@@ -480,10 +483,11 @@ static int f2fs_write_data_page(struct page *page,
+ 	const pgoff_t end_index = ((unsigned long long) i_size)
+ 							>> PAGE_CACHE_SHIFT;
+ 	unsigned offset;
++	bool need_balance_fs = false;
+ 	int err = 0;
+ 
+ 	if (page->index < end_index)
+-		goto out;
++		goto write;
+ 
+ 	/*
+ 	 * If the offset is out-of-range of file size,
+@@ -495,50 +499,46 @@ static int f2fs_write_data_page(struct page *page,
+ 			dec_page_count(sbi, F2FS_DIRTY_DENTS);
+ 			inode_dec_dirty_dents(inode);
+ 		}
+-		goto unlock_out;
++		goto out;
+ 	}
+ 
+ 	zero_user_segment(page, offset, PAGE_CACHE_SIZE);
+-out:
+-	if (sbi->por_doing)
+-		goto redirty_out;
+-
+-	if (wbc->for_reclaim && !S_ISDIR(inode->i_mode) && !is_cold_data(page))
++write:
++	if (sbi->por_doing) {
++		err = AOP_WRITEPAGE_ACTIVATE;
+ 		goto redirty_out;
++	}
+ 
+-	mutex_lock_op(sbi, DATA_WRITE);
++	/* Dentry blocks are controlled by checkpoint */
+ 	if (S_ISDIR(inode->i_mode)) {
+ 		dec_page_count(sbi, F2FS_DIRTY_DENTS);
+ 		inode_dec_dirty_dents(inode);
++		err = do_write_data_page(page);
++	} else {
++		int ilock = mutex_lock_op(sbi);
++		err = do_write_data_page(page);
++		mutex_unlock_op(sbi, ilock);
++		need_balance_fs = true;
+ 	}
+-	err = do_write_data_page(page);
+-	if (err && err != -ENOENT) {
+-		wbc->pages_skipped++;
+-		set_page_dirty(page);
+-	}
+-	mutex_unlock_op(sbi, DATA_WRITE);
++	if (err == -ENOENT)
++		goto out;
++	else if (err)
++		goto redirty_out;
+ 
+ 	if (wbc->for_reclaim)
+ 		f2fs_submit_bio(sbi, DATA, true);
+ 
+-	if (err == -ENOENT)
+-		goto unlock_out;
+-
+ 	clear_cold_data(page);
++out:
+ 	unlock_page(page);
+-
+-	if (!wbc->for_reclaim && !S_ISDIR(inode->i_mode))
++	if (need_balance_fs)
+ 		f2fs_balance_fs(sbi);
+ 	return 0;
+ 
+-unlock_out:
+-	unlock_page(page);
+-	return (err == -ENOENT) ? 0 : err;
+-
+ redirty_out:
+ 	wbc->pages_skipped++;
+ 	set_page_dirty(page);
+-	return AOP_WRITEPAGE_ACTIVATE;
++	return err;
+ }
+ 
+ #define MAX_DESIRED_PAGES_WP	4096
+@@ -593,6 +593,7 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
+ 	pgoff_t index = ((unsigned long long) pos) >> PAGE_CACHE_SHIFT;
+ 	struct dnode_of_data dn;
+ 	int err = 0;
++	int ilock;
+ 
+ 	/* for nobh_write_end */
+ 	*fsdata = NULL;
+@@ -604,28 +605,21 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
+ 		return -ENOMEM;
+ 	*pagep = page;
+ 
+-	mutex_lock_op(sbi, DATA_NEW);
++	ilock = mutex_lock_op(sbi);
+ 
+ 	set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 	err = get_dnode_of_data(&dn, index, ALLOC_NODE);
+-	if (err) {
+-		mutex_unlock_op(sbi, DATA_NEW);
+-		f2fs_put_page(page, 1);
+-		return err;
+-	}
++	if (err)
++		goto err;
+ 
+-	if (dn.data_blkaddr == NULL_ADDR) {
++	if (dn.data_blkaddr == NULL_ADDR)
+ 		err = reserve_new_block(&dn);
+-		if (err) {
+-			f2fs_put_dnode(&dn);
+-			mutex_unlock_op(sbi, DATA_NEW);
+-			f2fs_put_page(page, 1);
+-			return err;
+-		}
+-	}
++
+ 	f2fs_put_dnode(&dn);
++	if (err)
++		goto err;
+ 
+-	mutex_unlock_op(sbi, DATA_NEW);
++	mutex_unlock_op(sbi, ilock);
+ 
+ 	if ((len == PAGE_CACHE_SIZE) || PageUptodate(page))
+ 		return 0;
+@@ -655,6 +649,11 @@ out:
+ 	SetPageUptodate(page);
+ 	clear_cold_data(page);
+ 	return 0;
++
++err:
++	mutex_unlock_op(sbi, ilock);
++	f2fs_put_page(page, 1);
++	return err;
+ }
+ 
+ static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb,
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 907b97b..02981ae 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -249,9 +249,6 @@ ino_t f2fs_inode_by_name(struct inode *dir, struct qstr *qstr)
+ void f2fs_set_link(struct inode *dir, struct f2fs_dir_entry *de,
+ 		struct page *page, struct inode *inode)
+ {
+-	struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
+-
+-	mutex_lock_op(sbi, DENTRY_OPS);
+ 	lock_page(page);
+ 	wait_on_page_writeback(page);
+ 	de->ino = cpu_to_le32(inode->i_ino);
+@@ -265,7 +262,6 @@ void f2fs_set_link(struct inode *dir, struct f2fs_dir_entry *de,
+ 	F2FS_I(inode)->i_pino = dir->i_ino;
+ 
+ 	f2fs_put_page(page, 1);
+-	mutex_unlock_op(sbi, DENTRY_OPS);
+ }
+ 
+ void init_dent_inode(const struct qstr *name, struct page *ipage)
+@@ -284,6 +280,43 @@ void init_dent_inode(const struct qstr *name, struct page *ipage)
+ 	set_page_dirty(ipage);
+ }
+ 
++static int make_empty_dir(struct inode *inode, struct inode *parent)
++{
++	struct page *dentry_page;
++	struct f2fs_dentry_block *dentry_blk;
++	struct f2fs_dir_entry *de;
++	void *kaddr;
++
++	dentry_page = get_new_data_page(inode, 0, true);
++	if (IS_ERR(dentry_page))
++		return PTR_ERR(dentry_page);
++
++	kaddr = kmap_atomic(dentry_page);
++	dentry_blk = (struct f2fs_dentry_block *)kaddr;
++
++	de = &dentry_blk->dentry[0];
++	de->name_len = cpu_to_le16(1);
++	de->hash_code = 0;
++	de->ino = cpu_to_le32(inode->i_ino);
++	memcpy(dentry_blk->filename[0], ".", 1);
++	set_de_type(de, inode);
++
++	de = &dentry_blk->dentry[1];
++	de->hash_code = 0;
++	de->name_len = cpu_to_le16(2);
++	de->ino = cpu_to_le32(parent->i_ino);
++	memcpy(dentry_blk->filename[1], "..", 2);
++	set_de_type(de, inode);
++
++	test_and_set_bit_le(0, &dentry_blk->dentry_bitmap);
++	test_and_set_bit_le(1, &dentry_blk->dentry_bitmap);
++	kunmap_atomic(kaddr);
++
++	set_page_dirty(dentry_page);
++	f2fs_put_page(dentry_page, 1);
++	return 0;
++}
++
+ static int init_inode_metadata(struct inode *inode,
+ 		struct inode *dir, const struct qstr *name)
+ {
+@@ -294,7 +327,7 @@ static int init_inode_metadata(struct inode *inode,
+ 			return err;
+ 
+ 		if (S_ISDIR(inode->i_mode)) {
+-			err = f2fs_make_empty(inode, dir);
++			err = make_empty_dir(inode, dir);
+ 			if (err) {
+ 				remove_inode_page(inode);
+ 				return err;
+@@ -317,7 +350,7 @@ static int init_inode_metadata(struct inode *inode,
+ 	}
+ 	if (is_inode_flag_set(F2FS_I(inode), FI_INC_LINK)) {
+ 		inc_nlink(inode);
+-		f2fs_write_inode(inode, NULL);
++		update_inode_page(inode);
+ 	}
+ 	return 0;
+ }
+@@ -341,7 +374,7 @@ static void update_parent_metadata(struct inode *dir, struct inode *inode,
+ 	}
+ 
+ 	if (need_dir_update)
+-		f2fs_write_inode(dir, NULL);
++		update_inode_page(dir);
+ 	else
+ 		mark_inode_dirty(dir);
+ 
+@@ -373,6 +406,10 @@ next:
+ 	goto next;
+ }
+ 
++/*
++ * Caller should grab and release a mutex by calling mutex_lock_op() and
++ * mutex_unlock_op().
++ */
+ int __f2fs_add_link(struct inode *dir, const struct qstr *name, struct inode *inode)
+ {
+ 	unsigned int bit_pos;
+@@ -382,7 +419,6 @@ int __f2fs_add_link(struct inode *dir, const struct qstr *name, struct inode *in
+ 	f2fs_hash_t dentry_hash;
+ 	struct f2fs_dir_entry *de;
+ 	unsigned int nbucket, nblock;
+-	struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
+ 	size_t namelen = name->len;
+ 	struct page *dentry_page = NULL;
+ 	struct f2fs_dentry_block *dentry_blk = NULL;
+@@ -412,12 +448,9 @@ start:
+ 	bidx = dir_block_index(level, (le32_to_cpu(dentry_hash) % nbucket));
+ 
+ 	for (block = bidx; block <= (bidx + nblock - 1); block++) {
+-		mutex_lock_op(sbi, DENTRY_OPS);
+ 		dentry_page = get_new_data_page(dir, block, true);
+-		if (IS_ERR(dentry_page)) {
+-			mutex_unlock_op(sbi, DENTRY_OPS);
++		if (IS_ERR(dentry_page))
+ 			return PTR_ERR(dentry_page);
+-		}
+ 
+ 		dentry_blk = kmap(dentry_page);
+ 		bit_pos = room_for_filename(dentry_blk, slots);
+@@ -426,7 +459,6 @@ start:
+ 
+ 		kunmap(dentry_page);
+ 		f2fs_put_page(dentry_page, 1);
+-		mutex_unlock_op(sbi, DENTRY_OPS);
+ 	}
+ 
+ 	/* Move to next level to find the empty slot for new dentry */
+@@ -456,7 +488,6 @@ add_dentry:
+ fail:
+ 	kunmap(dentry_page);
+ 	f2fs_put_page(dentry_page, 1);
+-	mutex_unlock_op(sbi, DENTRY_OPS);
+ 	return err;
+ }
+ 
+@@ -476,8 +507,6 @@ void f2fs_delete_entry(struct f2fs_dir_entry *dentry, struct page *page,
+ 	void *kaddr = page_address(page);
+ 	int i;
+ 
+-	mutex_lock_op(sbi, DENTRY_OPS);
+-
+ 	lock_page(page);
+ 	wait_on_page_writeback(page);
+ 
+@@ -497,7 +526,7 @@ void f2fs_delete_entry(struct f2fs_dir_entry *dentry, struct page *page,
+ 
+ 	if (inode && S_ISDIR(inode->i_mode)) {
+ 		drop_nlink(dir);
+-		f2fs_write_inode(dir, NULL);
++		update_inode_page(dir);
+ 	} else {
+ 		mark_inode_dirty(dir);
+ 	}
+@@ -509,7 +538,8 @@ void f2fs_delete_entry(struct f2fs_dir_entry *dentry, struct page *page,
+ 			drop_nlink(inode);
+ 			i_size_write(inode, 0);
+ 		}
+-		f2fs_write_inode(inode, NULL);
++		update_inode_page(inode);
++
+ 		if (inode->i_nlink == 0)
+ 			add_orphan_inode(sbi, inode->i_ino);
+ 	}
+@@ -522,45 +552,6 @@ void f2fs_delete_entry(struct f2fs_dir_entry *dentry, struct page *page,
+ 		inode_dec_dirty_dents(dir);
+ 	}
+ 	f2fs_put_page(page, 1);
+-
+-	mutex_unlock_op(sbi, DENTRY_OPS);
+-}
+-
+-int f2fs_make_empty(struct inode *inode, struct inode *parent)
+-{
+-	struct page *dentry_page;
+-	struct f2fs_dentry_block *dentry_blk;
+-	struct f2fs_dir_entry *de;
+-	void *kaddr;
+-
+-	dentry_page = get_new_data_page(inode, 0, true);
+-	if (IS_ERR(dentry_page))
+-		return PTR_ERR(dentry_page);
+-
+-	kaddr = kmap_atomic(dentry_page);
+-	dentry_blk = (struct f2fs_dentry_block *)kaddr;
+-
+-	de = &dentry_blk->dentry[0];
+-	de->name_len = cpu_to_le16(1);
+-	de->hash_code = f2fs_dentry_hash(".", 1);
+-	de->ino = cpu_to_le32(inode->i_ino);
+-	memcpy(dentry_blk->filename[0], ".", 1);
+-	set_de_type(de, inode);
+-
+-	de = &dentry_blk->dentry[1];
+-	de->hash_code = f2fs_dentry_hash("..", 2);
+-	de->name_len = cpu_to_le16(2);
+-	de->ino = cpu_to_le32(parent->i_ino);
+-	memcpy(dentry_blk->filename[1], "..", 2);
+-	set_de_type(de, inode);
+-
+-	test_and_set_bit_le(0, &dentry_blk->dentry_bitmap);
+-	test_and_set_bit_le(1, &dentry_blk->dentry_bitmap);
+-	kunmap_atomic(kaddr);
+-
+-	set_page_dirty(dentry_page);
+-	f2fs_put_page(dentry_page, 1);
+-	return 0;
+ }
+ 
+ bool f2fs_empty_dir(struct inode *dir)
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 71eacd3..06cc75c 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -309,23 +309,12 @@ enum count_type {
+ };
+ 
+ /*
+- * FS_LOCK nesting subclasses for the lock validator:
+- *
+- * The locking order between these classes is
+- * RENAME -> DENTRY_OPS -> DATA_WRITE -> DATA_NEW
+- *    -> DATA_TRUNC -> NODE_WRITE -> NODE_NEW -> NODE_TRUNC
++ * Uses as sbi->fs_lock[NR_GLOBAL_LOCKS].
++ * The checkpoint procedure blocks all the locks in this fs_lock array.
++ * Some FS operations grab free locks, and if there is no free lock,
++ * then wait to grab a lock in a round-robin manner.
+  */
+-enum lock_type {
+-	RENAME,		/* for renaming operations */
+-	DENTRY_OPS,	/* for directory operations */
+-	DATA_WRITE,	/* for data write */
+-	DATA_NEW,	/* for data allocation */
+-	DATA_TRUNC,	/* for data truncate */
+-	NODE_NEW,	/* for node allocation */
+-	NODE_TRUNC,	/* for node truncate */
+-	NODE_WRITE,	/* for node write */
+-	NR_LOCK_TYPE,
+-};
++#define NR_GLOBAL_LOCKS	8
+ 
+ /*
+  * The below are the page types of bios used in submti_bio().
+@@ -365,10 +354,11 @@ struct f2fs_sb_info {
+ 	/* for checkpoint */
+ 	struct f2fs_checkpoint *ckpt;		/* raw checkpoint pointer */
+ 	struct inode *meta_inode;		/* cache meta blocks */
+-	struct mutex cp_mutex;			/* for checkpoint procedure */
+-	struct mutex fs_lock[NR_LOCK_TYPE];	/* for blocking FS operations */
+-	struct mutex write_inode;		/* mutex for write inode */
++	struct mutex cp_mutex;			/* checkpoint procedure lock */
++	struct mutex fs_lock[NR_GLOBAL_LOCKS];	/* blocking FS operations */
++	struct mutex node_write;		/* locking node writes */
+ 	struct mutex writepages;		/* mutex for writepages() */
++	unsigned char next_lock_num;		/* round-robin global locks */
+ 	int por_doing;				/* recovery is doing or not */
+ 
+ 	/* for orphan inode management */
+@@ -503,14 +493,40 @@ static inline void clear_ckpt_flags(struct f2fs_checkpoint *cp, unsigned int f)
+ 	cp->ckpt_flags = cpu_to_le32(ckpt_flags);
+ }
+ 
+-static inline void mutex_lock_op(struct f2fs_sb_info *sbi, enum lock_type t)
++static inline void mutex_lock_all(struct f2fs_sb_info *sbi)
++{
++	int i = 0;
++	for (; i < NR_GLOBAL_LOCKS; i++)
++		mutex_lock(&sbi->fs_lock[i]);
++}
++
++static inline void mutex_unlock_all(struct f2fs_sb_info *sbi)
+ {
+-	mutex_lock_nested(&sbi->fs_lock[t], t);
++	int i = 0;
++	for (; i < NR_GLOBAL_LOCKS; i++)
++		mutex_unlock(&sbi->fs_lock[i]);
+ }
+ 
+-static inline void mutex_unlock_op(struct f2fs_sb_info *sbi, enum lock_type t)
++static inline int mutex_lock_op(struct f2fs_sb_info *sbi)
+ {
+-	mutex_unlock(&sbi->fs_lock[t]);
++	unsigned char next_lock = sbi->next_lock_num % NR_GLOBAL_LOCKS;
++	int i = 0;
++
++	for (; i < NR_GLOBAL_LOCKS; i++)
++		if (mutex_trylock(&sbi->fs_lock[i]))
++			return i;
++
++	mutex_lock(&sbi->fs_lock[next_lock]);
++	sbi->next_lock_num++;
++	return next_lock;
++}
++
++static inline void mutex_unlock_op(struct f2fs_sb_info *sbi, int ilock)
++{
++	if (ilock < 0)
++		return;
++	BUG_ON(ilock >= NR_GLOBAL_LOCKS);
++	mutex_unlock(&sbi->fs_lock[ilock]);
+ }
+ 
+ /*
+@@ -879,6 +895,7 @@ long f2fs_compat_ioctl(struct file *, unsigned int, unsigned long);
+ void f2fs_set_inode_flags(struct inode *);
+ struct inode *f2fs_iget(struct super_block *, unsigned long);
+ void update_inode(struct inode *, struct page *);
++int update_inode_page(struct inode *);
+ int f2fs_write_inode(struct inode *, struct writeback_control *);
+ void f2fs_evict_inode(struct inode *);
+ 
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 5a67a07..7be0f4b 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -34,19 +34,18 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	block_t old_blk_addr;
+ 	struct dnode_of_data dn;
+-	int err;
++	int err, ilock;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+ 	sb_start_pagefault(inode->i_sb);
+ 
+-	mutex_lock_op(sbi, DATA_NEW);
+-
+ 	/* block allocation */
++	ilock = mutex_lock_op(sbi);
+ 	set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 	err = get_dnode_of_data(&dn, page->index, ALLOC_NODE);
+ 	if (err) {
+-		mutex_unlock_op(sbi, DATA_NEW);
++		mutex_unlock_op(sbi, ilock);
+ 		goto out;
+ 	}
+ 
+@@ -56,13 +55,12 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
+ 		err = reserve_new_block(&dn);
+ 		if (err) {
+ 			f2fs_put_dnode(&dn);
+-			mutex_unlock_op(sbi, DATA_NEW);
++			mutex_unlock_op(sbi, ilock);
+ 			goto out;
+ 		}
+ 	}
+ 	f2fs_put_dnode(&dn);
+-
+-	mutex_unlock_op(sbi, DATA_NEW);
++	mutex_unlock_op(sbi, ilock);
+ 
+ 	lock_page(page);
+ 	if (page->mapping != inode->i_mapping ||
+@@ -223,20 +221,19 @@ static int truncate_blocks(struct inode *inode, u64 from)
+ 	unsigned int blocksize = inode->i_sb->s_blocksize;
+ 	struct dnode_of_data dn;
+ 	pgoff_t free_from;
+-	int count = 0;
++	int count = 0, ilock = -1;
+ 	int err;
+ 
+ 	free_from = (pgoff_t)
+ 			((from + blocksize - 1) >> (sbi->log_blocksize));
+ 
+-	mutex_lock_op(sbi, DATA_TRUNC);
+-
++	ilock = mutex_lock_op(sbi);
+ 	set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 	err = get_dnode_of_data(&dn, free_from, LOOKUP_NODE);
+ 	if (err) {
+ 		if (err == -ENOENT)
+ 			goto free_next;
+-		mutex_unlock_op(sbi, DATA_TRUNC);
++		mutex_unlock_op(sbi, ilock);
+ 		return err;
+ 	}
+ 
+@@ -247,6 +244,7 @@ static int truncate_blocks(struct inode *inode, u64 from)
+ 
+ 	count -= dn.ofs_in_node;
+ 	BUG_ON(count < 0);
++
+ 	if (dn.ofs_in_node || IS_INODE(dn.node_page)) {
+ 		truncate_data_blocks_range(&dn, count);
+ 		free_from += count;
+@@ -255,7 +253,7 @@ static int truncate_blocks(struct inode *inode, u64 from)
+ 	f2fs_put_dnode(&dn);
+ free_next:
+ 	err = truncate_inode_blocks(inode, free_from);
+-	mutex_unlock_op(sbi, DATA_TRUNC);
++	mutex_unlock_op(sbi, ilock);
+ 
+ 	/* lastly zero out the first data page */
+ 	truncate_partial_data_page(inode, from);
+@@ -363,15 +361,16 @@ static void fill_zero(struct inode *inode, pgoff_t index,
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct page *page;
++	int ilock;
+ 
+ 	if (!len)
+ 		return;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+-	mutex_lock_op(sbi, DATA_NEW);
++	ilock = mutex_lock_op(sbi);
+ 	page = get_new_data_page(inode, index, false);
+-	mutex_unlock_op(sbi, DATA_NEW);
++	mutex_unlock_op(sbi, ilock);
+ 
+ 	if (!IS_ERR(page)) {
+ 		wait_on_page_writeback(page);
+@@ -388,13 +387,10 @@ int truncate_hole(struct inode *inode, pgoff_t pg_start, pgoff_t pg_end)
+ 
+ 	for (index = pg_start; index < pg_end; index++) {
+ 		struct dnode_of_data dn;
+-		struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 
+-		mutex_lock_op(sbi, DATA_TRUNC);
+ 		set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 		err = get_dnode_of_data(&dn, index, LOOKUP_NODE);
+ 		if (err) {
+-			mutex_unlock_op(sbi, DATA_TRUNC);
+ 			if (err == -ENOENT)
+ 				continue;
+ 			return err;
+@@ -403,7 +399,6 @@ int truncate_hole(struct inode *inode, pgoff_t pg_start, pgoff_t pg_end)
+ 		if (dn.data_blkaddr != NULL_ADDR)
+ 			truncate_data_blocks_range(&dn, 1);
+ 		f2fs_put_dnode(&dn);
+-		mutex_unlock_op(sbi, DATA_TRUNC);
+ 	}
+ 	return 0;
+ }
+@@ -434,6 +429,7 @@ static int punch_hole(struct inode *inode, loff_t offset, loff_t len, int mode)
+ 			struct address_space *mapping = inode->i_mapping;
+ 			loff_t blk_start, blk_end;
+ 			struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
++			int ilock;
+ 
+ 			f2fs_balance_fs(sbi);
+ 
+@@ -441,7 +437,10 @@ static int punch_hole(struct inode *inode, loff_t offset, loff_t len, int mode)
+ 			blk_end = pg_end << PAGE_CACHE_SHIFT;
+ 			truncate_inode_pages_range(mapping, blk_start,
+ 					blk_end - 1);
++
++			ilock = mutex_lock_op(sbi);
+ 			ret = truncate_hole(inode, pg_start, pg_end);
++			mutex_unlock_op(sbi, ilock);
+ 		}
+ 	}
+ 
+@@ -475,13 +474,13 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
+ 
+ 	for (index = pg_start; index <= pg_end; index++) {
+ 		struct dnode_of_data dn;
++		int ilock;
+ 
+-		mutex_lock_op(sbi, DATA_NEW);
+-
++		ilock = mutex_lock_op(sbi);
+ 		set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 		ret = get_dnode_of_data(&dn, index, ALLOC_NODE);
+ 		if (ret) {
+-			mutex_unlock_op(sbi, DATA_NEW);
++			mutex_unlock_op(sbi, ilock);
+ 			break;
+ 		}
+ 
+@@ -489,13 +488,12 @@ static int expand_inode_data(struct inode *inode, loff_t offset,
+ 			ret = reserve_new_block(&dn);
+ 			if (ret) {
+ 				f2fs_put_dnode(&dn);
+-				mutex_unlock_op(sbi, DATA_NEW);
++				mutex_unlock_op(sbi, ilock);
+ 				break;
+ 			}
+ 		}
+ 		f2fs_put_dnode(&dn);
+-
+-		mutex_unlock_op(sbi, DATA_NEW);
++		mutex_unlock_op(sbi, ilock);
+ 
+ 		if (pg_start == pg_end)
+ 			new_size = offset + len;
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index e97f301..83cec8f 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -510,7 +510,6 @@ static void move_data_page(struct inode *inode, struct page *page, int gc_type)
+ 			wait_on_page_writeback(page);
+ 		}
+ 
+-		mutex_lock_op(sbi, DATA_WRITE);
+ 		if (clear_page_dirty_for_io(page) &&
+ 			S_ISDIR(inode->i_mode)) {
+ 			dec_page_count(sbi, F2FS_DIRTY_DENTS);
+@@ -518,7 +517,6 @@ static void move_data_page(struct inode *inode, struct page *page, int gc_type)
+ 		}
+ 		set_cold_data(page);
+ 		do_write_data_page(page);
+-		mutex_unlock_op(sbi, DATA_WRITE);
+ 		clear_cold_data(page);
+ 	}
+ out:
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index f798ddf..60105b7 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -195,46 +195,49 @@ void update_inode(struct inode *inode, struct page *node_page)
+ 	set_page_dirty(node_page);
+ }
+ 
+-int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
++int update_inode_page(struct inode *inode)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct page *node_page;
+-	bool need_lock = false;
+-
+-	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
+-			inode->i_ino == F2FS_META_INO(sbi))
+-		return 0;
+-
+-	if (wbc)
+-		f2fs_balance_fs(sbi);
+ 
+ 	node_page = get_node_page(sbi, inode->i_ino);
+ 	if (IS_ERR(node_page))
+ 		return PTR_ERR(node_page);
+ 
+-	if (!PageDirty(node_page)) {
+-		need_lock = true;
+-		f2fs_put_page(node_page, 1);
+-		mutex_lock(&sbi->write_inode);
+-		node_page = get_node_page(sbi, inode->i_ino);
+-		if (IS_ERR(node_page)) {
+-			mutex_unlock(&sbi->write_inode);
+-			return PTR_ERR(node_page);
+-		}
+-	}
+ 	update_inode(inode, node_page);
+ 	f2fs_put_page(node_page, 1);
+-	if (need_lock)
+-		mutex_unlock(&sbi->write_inode);
+ 	return 0;
+ }
+ 
++int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
++{
++	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
++	int ret, ilock;
++
++	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
++			inode->i_ino == F2FS_META_INO(sbi))
++		return 0;
++
++	if (wbc)
++		f2fs_balance_fs(sbi);
++
++	/*
++	 * We need to lock here to prevent from producing dirty node pages
++	 * during the urgent cleaning time when runing out of free sections.
++	 */
++	ilock = mutex_lock_op(sbi);
++	ret = update_inode_page(inode);
++	mutex_unlock_op(sbi, ilock);
++	return ret;
++}
++
+ /*
+  * Called at the last iput() if i_nlink is zero
+  */
+ void f2fs_evict_inode(struct inode *inode)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
++	int ilock;
+ 
+ 	truncate_inode_pages(&inode->i_data, 0);
+ 
+@@ -255,7 +258,10 @@ void f2fs_evict_inode(struct inode *inode)
+ 	if (F2FS_HAS_BLOCKS(inode))
+ 		f2fs_truncate(inode);
+ 
++	ilock = mutex_lock_op(sbi);
+ 	remove_inode_page(inode);
++	mutex_unlock_op(sbi, ilock);
++
+ 	sb_end_intwrite(inode->i_sb);
+ no_delete:
+ 	clear_inode(inode);
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 7c6e219..841f6b4 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -26,19 +26,19 @@ static struct inode *f2fs_new_inode(struct inode *dir, umode_t mode)
+ 	nid_t ino;
+ 	struct inode *inode;
+ 	bool nid_free = false;
+-	int err;
++	int err, ilock;
+ 
+ 	inode = new_inode(sb);
+ 	if (!inode)
+ 		return ERR_PTR(-ENOMEM);
+ 
+-	mutex_lock_op(sbi, NODE_NEW);
++	ilock = mutex_lock_op(sbi);
+ 	if (!alloc_nid(sbi, &ino)) {
+-		mutex_unlock_op(sbi, NODE_NEW);
++		mutex_unlock_op(sbi, ilock);
+ 		err = -ENOSPC;
+ 		goto fail;
+ 	}
+-	mutex_unlock_op(sbi, NODE_NEW);
++	mutex_unlock_op(sbi, ilock);
+ 
+ 	inode->i_uid = current_fsuid();
+ 
+@@ -122,7 +122,7 @@ static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
+ 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+ 	struct inode *inode;
+ 	nid_t ino = 0;
+-	int err;
++	int err, ilock;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+@@ -138,7 +138,9 @@ static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
+ 	inode->i_mapping->a_ops = &f2fs_dblock_aops;
+ 	ino = inode->i_ino;
+ 
++	ilock = mutex_lock_op(sbi);
+ 	err = f2fs_add_link(dentry, inode);
++	mutex_unlock_op(sbi, ilock);
+ 	if (err)
+ 		goto out;
+ 
+@@ -162,7 +164,7 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
+ 	struct inode *inode = old_dentry->d_inode;
+ 	struct super_block *sb = dir->i_sb;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+-	int err;
++	int err, ilock;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+@@ -170,7 +172,9 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
+ 	atomic_inc(&inode->i_count);
+ 
+ 	set_inode_flag(F2FS_I(inode), FI_INC_LINK);
++	ilock = mutex_lock_op(sbi);
+ 	err = f2fs_add_link(dentry, inode);
++	mutex_unlock_op(sbi, ilock);
+ 	if (err)
+ 		goto out;
+ 
+@@ -229,6 +233,7 @@ static int f2fs_unlink(struct inode *dir, struct dentry *dentry)
+ 	struct f2fs_dir_entry *de;
+ 	struct page *page;
+ 	int err = -ENOENT;
++	int ilock;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+@@ -243,7 +248,9 @@ static int f2fs_unlink(struct inode *dir, struct dentry *dentry)
+ 		goto fail;
+ 	}
+ 
++	ilock = mutex_lock_op(sbi);
+ 	f2fs_delete_entry(de, page, inode);
++	mutex_unlock_op(sbi, ilock);
+ 
+ 	/* In order to evict this inode,  we set it dirty */
+ 	mark_inode_dirty(inode);
+@@ -258,7 +265,7 @@ static int f2fs_symlink(struct inode *dir, struct dentry *dentry,
+ 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+ 	struct inode *inode;
+ 	size_t symlen = strlen(symname) + 1;
+-	int err;
++	int err, ilock;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+@@ -269,7 +276,9 @@ static int f2fs_symlink(struct inode *dir, struct dentry *dentry,
+ 	inode->i_op = &f2fs_symlink_inode_operations;
+ 	inode->i_mapping->a_ops = &f2fs_dblock_aops;
+ 
++	ilock = mutex_lock_op(sbi);
+ 	err = f2fs_add_link(dentry, inode);
++	mutex_unlock_op(sbi, ilock);
+ 	if (err)
+ 		goto out;
+ 
+@@ -291,7 +300,7 @@ static int f2fs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
+ 	struct inode *inode;
+-	int err;
++	int err, ilock;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+@@ -305,7 +314,9 @@ static int f2fs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+ 	mapping_set_gfp_mask(inode->i_mapping, GFP_F2FS_ZERO);
+ 
+ 	set_inode_flag(F2FS_I(inode), FI_INC_LINK);
++	ilock = mutex_lock_op(sbi);
+ 	err = f2fs_add_link(dentry, inode);
++	mutex_unlock_op(sbi, ilock);
+ 	if (err)
+ 		goto out_fail;
+ 
+@@ -340,6 +351,7 @@ static int f2fs_mknod(struct inode *dir, struct dentry *dentry,
+ 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+ 	struct inode *inode;
+ 	int err = 0;
++	int ilock;
+ 
+ 	if (!new_valid_dev(rdev))
+ 		return -EINVAL;
+@@ -353,7 +365,9 @@ static int f2fs_mknod(struct inode *dir, struct dentry *dentry,
+ 	init_special_inode(inode, inode->i_mode, rdev);
+ 	inode->i_op = &f2fs_special_inode_operations;
+ 
++	ilock = mutex_lock_op(sbi);
+ 	err = f2fs_add_link(dentry, inode);
++	mutex_unlock_op(sbi, ilock);
+ 	if (err)
+ 		goto out;
+ 
+@@ -381,7 +395,7 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 	struct f2fs_dir_entry *old_dir_entry = NULL;
+ 	struct f2fs_dir_entry *old_entry;
+ 	struct f2fs_dir_entry *new_entry;
+-	int err = -ENOENT;
++	int err = -ENOENT, ilock = -1;
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+@@ -396,7 +410,7 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 			goto out_old;
+ 	}
+ 
+-	mutex_lock_op(sbi, RENAME);
++	ilock = mutex_lock_op(sbi);
+ 
+ 	if (new_inode) {
+ 		struct page *new_page;
+@@ -419,7 +433,7 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 		drop_nlink(new_inode);
+ 		if (!new_inode->i_nlink)
+ 			add_orphan_inode(sbi, new_inode->i_ino);
+-		f2fs_write_inode(new_inode, NULL);
++		update_inode_page(new_inode);
+ 	} else {
+ 		err = f2fs_add_link(new_dentry, old_inode);
+ 		if (err)
+@@ -427,7 +441,7 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 
+ 		if (old_dir_entry) {
+ 			inc_nlink(new_dir);
+-			f2fs_write_inode(new_dir, NULL);
++			update_inode_page(new_dir);
+ 		}
+ 	}
+ 
+@@ -445,10 +459,10 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 			f2fs_put_page(old_dir_page, 0);
+ 		}
+ 		drop_nlink(old_dir);
+-		f2fs_write_inode(old_dir, NULL);
++		update_inode_page(old_dir);
+ 	}
+ 
+-	mutex_unlock_op(sbi, RENAME);
++	mutex_unlock_op(sbi, ilock);
+ 	return 0;
+ 
+ out_dir:
+@@ -456,7 +470,7 @@ out_dir:
+ 		kunmap(old_dir_page);
+ 		f2fs_put_page(old_dir_page, 0);
+ 	}
+-	mutex_unlock_op(sbi, RENAME);
++	mutex_unlock_op(sbi, ilock);
+ out_old:
+ 	kunmap(old_page);
+ 	f2fs_put_page(old_page, 0);
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index ad3adbe..5a7edf9 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -385,6 +385,9 @@ got:
+ 
+ /*
+  * Caller should call f2fs_put_dnode(dn).
++ * Also, it should grab and release a mutex by calling mutex_lock_op() and
++ * mutex_unlock_op() only if ro is not set RDONLY_NODE.
++ * In the case of RDONLY_NODE, we don't need to care about mutex.
+  */
+ int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int mode)
+ {
+@@ -415,11 +418,8 @@ int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int mode)
+ 		bool done = false;
+ 
+ 		if (!nids[i] && mode == ALLOC_NODE) {
+-			mutex_lock_op(sbi, NODE_NEW);
+-
+ 			/* alloc new node */
+ 			if (!alloc_nid(sbi, &(nids[i]))) {
+-				mutex_unlock_op(sbi, NODE_NEW);
+ 				err = -ENOSPC;
+ 				goto release_pages;
+ 			}
+@@ -428,14 +428,12 @@ int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int mode)
+ 			npage[i] = new_node_page(dn, noffset[i]);
+ 			if (IS_ERR(npage[i])) {
+ 				alloc_nid_failed(sbi, nids[i]);
+-				mutex_unlock_op(sbi, NODE_NEW);
+ 				err = PTR_ERR(npage[i]);
+ 				goto release_pages;
+ 			}
+ 
+ 			set_nid(parent, offset[i - 1], nids[i], i == 1);
+ 			alloc_nid_done(sbi, nids[i]);
+-			mutex_unlock_op(sbi, NODE_NEW);
+ 			done = true;
+ 		} else if (mode == LOOKUP_NODE_RA && i == level && level > 1) {
+ 			npage[i] = get_node_page_ra(parent, offset[i - 1]);
+@@ -745,6 +743,10 @@ fail:
+ 	return err > 0 ? 0 : err;
+ }
+ 
++/*
++ * Caller should grab and release a mutex by calling mutex_lock_op() and
++ * mutex_unlock_op().
++ */
+ int remove_inode_page(struct inode *inode)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+@@ -752,21 +754,16 @@ int remove_inode_page(struct inode *inode)
+ 	nid_t ino = inode->i_ino;
+ 	struct dnode_of_data dn;
+ 
+-	mutex_lock_op(sbi, NODE_TRUNC);
+ 	page = get_node_page(sbi, ino);
+-	if (IS_ERR(page)) {
+-		mutex_unlock_op(sbi, NODE_TRUNC);
++	if (IS_ERR(page))
+ 		return PTR_ERR(page);
+-	}
+ 
+ 	if (F2FS_I(inode)->i_xattr_nid) {
+ 		nid_t nid = F2FS_I(inode)->i_xattr_nid;
+ 		struct page *npage = get_node_page(sbi, nid);
+ 
+-		if (IS_ERR(npage)) {
+-			mutex_unlock_op(sbi, NODE_TRUNC);
++		if (IS_ERR(npage))
+ 			return PTR_ERR(npage);
+-		}
+ 
+ 		F2FS_I(inode)->i_xattr_nid = 0;
+ 		set_new_dnode(&dn, inode, page, npage, nid);
+@@ -778,23 +775,18 @@ int remove_inode_page(struct inode *inode)
+ 	BUG_ON(inode->i_blocks != 0 && inode->i_blocks != 1);
+ 	set_new_dnode(&dn, inode, page, page, ino);
+ 	truncate_node(&dn);
+-
+-	mutex_unlock_op(sbi, NODE_TRUNC);
+ 	return 0;
+ }
+ 
+ int new_inode_page(struct inode *inode, const struct qstr *name)
+ {
+-	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct page *page;
+ 	struct dnode_of_data dn;
+ 
+ 	/* allocate inode page for new inode */
+ 	set_new_dnode(&dn, inode, NULL, NULL, inode->i_ino);
+-	mutex_lock_op(sbi, NODE_NEW);
+ 	page = new_node_page(&dn, 0);
+ 	init_dent_inode(name, page);
+-	mutex_unlock_op(sbi, NODE_NEW);
+ 	if (IS_ERR(page))
+ 		return PTR_ERR(page);
+ 	f2fs_put_page(page, 1);
+@@ -985,7 +977,7 @@ void sync_inode_page(struct dnode_of_data *dn)
+ 		if (!dn->inode_page_locked)
+ 			unlock_page(dn->inode_page);
+ 	} else {
+-		f2fs_write_inode(dn->inode, NULL);
++		update_inode_page(dn->inode);
+ 	}
+ }
+ 
+@@ -1102,8 +1094,6 @@ static int f2fs_write_node_page(struct page *page,
+ 
+ 	wait_on_page_writeback(page);
+ 
+-	mutex_lock_op(sbi, NODE_WRITE);
+-
+ 	/* get old block addr of this node page */
+ 	nid = nid_of_node(page);
+ 	BUG_ON(page->index != nid);
+@@ -1111,25 +1101,25 @@ static int f2fs_write_node_page(struct page *page,
+ 	get_node_info(sbi, nid, &ni);
+ 
+ 	/* This page is already truncated */
+-	if (ni.blk_addr == NULL_ADDR)
+-		goto out;
++	if (ni.blk_addr == NULL_ADDR) {
++		dec_page_count(sbi, F2FS_DIRTY_NODES);
++		unlock_page(page);
++		return 0;
++	}
+ 
+ 	if (wbc->for_reclaim) {
+ 		dec_page_count(sbi, F2FS_DIRTY_NODES);
+ 		wbc->pages_skipped++;
+ 		set_page_dirty(page);
+-		mutex_unlock_op(sbi, NODE_WRITE);
+ 		return AOP_WRITEPAGE_ACTIVATE;
+ 	}
+ 
++	mutex_lock(&sbi->node_write);
+ 	set_page_writeback(page);
+-
+-	/* insert node offset */
+ 	write_node_page(sbi, page, nid, ni.blk_addr, &new_addr);
+ 	set_node_addr(sbi, &ni, new_addr);
+-out:
+ 	dec_page_count(sbi, F2FS_DIRTY_NODES);
+-	mutex_unlock_op(sbi, NODE_WRITE);
++	mutex_unlock(&sbi->node_write);
+ 	unlock_page(page);
+ 	return 0;
+ }
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 61bdaa7..f16d12d 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -242,6 +242,7 @@ static int do_recover_data(struct f2fs_sb_info *sbi, struct inode *inode,
+ 	struct f2fs_summary sum;
+ 	struct node_info ni;
+ 	int err = 0;
++	int ilock;
+ 
+ 	start = start_bidx_of_node(ofs_of_node(page));
+ 	if (IS_INODE(page))
+@@ -249,10 +250,14 @@ static int do_recover_data(struct f2fs_sb_info *sbi, struct inode *inode,
+ 	else
+ 		end = start + ADDRS_PER_BLOCK;
+ 
++	ilock = mutex_lock_op(sbi);
+ 	set_new_dnode(&dn, inode, NULL, NULL, 0);
++
+ 	err = get_dnode_of_data(&dn, start, ALLOC_NODE);
+-	if (err)
++	if (err) {
++		mutex_unlock_op(sbi, ilock);
+ 		return err;
++	}
+ 
+ 	wait_on_page_writeback(dn.node_page);
+ 
+@@ -297,6 +302,7 @@ static int do_recover_data(struct f2fs_sb_info *sbi, struct inode *inode,
+ 
+ 	recover_node_page(sbi, dn.node_page, &sum, &ni, blkaddr);
+ 	f2fs_put_dnode(&dn);
++	mutex_unlock_op(sbi, ilock);
+ 	return 0;
+ }
+ 
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index d2328e8..1b16cea 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -556,11 +556,11 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 	sbi->raw_super = raw_super;
+ 	sbi->raw_super_buf = raw_super_buf;
+ 	mutex_init(&sbi->gc_mutex);
+-	mutex_init(&sbi->write_inode);
+ 	mutex_init(&sbi->writepages);
+ 	mutex_init(&sbi->cp_mutex);
+-	for (i = 0; i < NR_LOCK_TYPE; i++)
++	for (i = 0; i < NR_GLOBAL_LOCKS; i++)
+ 		mutex_init(&sbi->fs_lock[i]);
++	mutex_init(&sbi->node_write);
+ 	sbi->por_doing = 0;
+ 	spin_lock_init(&sbi->stat_lock);
+ 	init_rwsem(&sbi->bio_sem);
+diff --git a/fs/f2fs/xattr.c b/fs/f2fs/xattr.c
+index 3bfea80..0b02dce 100644
+--- a/fs/f2fs/xattr.c
++++ b/fs/f2fs/xattr.c
+@@ -307,6 +307,7 @@ int f2fs_setxattr(struct inode *inode, int name_index, const char *name,
+ 	int error, found, free, newsize;
+ 	size_t name_len;
+ 	char *pval;
++	int ilock;
+ 
+ 	if (name == NULL)
+ 		return -EINVAL;
+@@ -321,7 +322,8 @@ int f2fs_setxattr(struct inode *inode, int name_index, const char *name,
+ 
+ 	f2fs_balance_fs(sbi);
+ 
+-	mutex_lock_op(sbi, NODE_NEW);
++	ilock = mutex_lock_op(sbi);
++
+ 	if (!fi->i_xattr_nid) {
+ 		/* Allocate new attribute block */
+ 		struct dnode_of_data dn;
+@@ -433,13 +435,13 @@ int f2fs_setxattr(struct inode *inode, int name_index, const char *name,
+ 		inode->i_ctime = CURRENT_TIME;
+ 		clear_inode_flag(fi, FI_ACL_MODE);
+ 	}
+-	f2fs_write_inode(inode, NULL);
+-	mutex_unlock_op(sbi, NODE_NEW);
++	update_inode_page(inode);
++	mutex_unlock_op(sbi, ilock);
+ 
+ 	return 0;
+ cleanup:
+ 	f2fs_put_page(page, 1);
+ exit:
+-	mutex_unlock_op(sbi, NODE_NEW);
++	mutex_unlock_op(sbi, ilock);
+ 	return error;
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

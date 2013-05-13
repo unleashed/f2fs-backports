@@ -1,0 +1,53 @@
+From 6f89d3b7c37f936743bc81ebb6ed10ae681c8c16 Mon Sep 17 00:00:00 2001
+From: Haicheng Li <haicheng.li@linux.intel.com>
+Date: Sun, 28 Apr 2013 19:16:07 +0800
+Subject: [PATCH] f2fs: remove useless #include <linux/proc_fs.h> as we're now
+ using sysfs as debug entry.
+
+Signed-off-by: Haicheng Li <haicheng.li@linux.intel.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/debug.c | 1 -
+ fs/f2fs/gc.c    | 1 -
+ fs/f2fs/super.c | 1 -
+ 3 files changed, 3 deletions(-)
+
+diff --git a/fs/f2fs/debug.c b/fs/f2fs/debug.c
+index c3bf343..8d99437 100644
+--- a/fs/f2fs/debug.c
++++ b/fs/f2fs/debug.c
+@@ -13,7 +13,6 @@
+ 
+ #include <linux/fs.h>
+ #include <linux/backing-dev.h>
+-#include <linux/proc_fs.h>
+ #include <linux/f2fs_fs.h>
+ #include <linux/blkdev.h>
+ #include <linux/debugfs.h>
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 25a1f7e..1496159 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -11,7 +11,6 @@
+ #include <linux/fs.h>
+ #include <linux/module.h>
+ #include <linux/backing-dev.h>
+-#include <linux/proc_fs.h>
+ #include <linux/init.h>
+ #include <linux/f2fs_fs.h>
+ #include <linux/kthread.h>
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 47a63c3..75521b5 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -12,7 +12,6 @@
+ #include <linux/init.h>
+ #include <linux/fs.h>
+ #include <linux/statfs.h>
+-#include <linux/proc_fs.h>
+ #include <linux/buffer_head.h>
+ #include <linux/backing-dev.h>
+ #include <linux/kthread.h>
+-- 
+1.8.2.1.422.gdcd8c09
+

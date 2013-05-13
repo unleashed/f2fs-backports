@@ -1,0 +1,34 @@
+From aceef8095e239665187e9681c81864ca431de533 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 22 Dec 2012 12:09:43 +0900
+Subject: [PATCH] f2fs: handle error from f2fs_iget_nowait
+
+In case f2fs_iget_nowait returns error, it results in truncate_hole being
+called with 'error' value as inode pointer. There is no check in truncate_hole
+for valid inode, so it could result in crash due "invalid access to memory".
+Avoid this by handling error condition properly.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/recovery.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index b07e9b6..207e2c8 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -228,6 +228,9 @@ static void check_index_in_prev_nodes(struct f2fs_sb_info *sbi,
+ 
+ 	/* Deallocate previous index in the node page */
+ 	inode = f2fs_iget_nowait(sbi->sb, ino);
++	if (IS_ERR(inode))
++		return;
++
+ 	truncate_hole(inode, bidx, bidx + 1);
+ 	iput(inode);
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

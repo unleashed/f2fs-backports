@@ -1,0 +1,122 @@
+From 88afdcad62e59d6709b260041151b45003dfb8f0 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 26 Dec 2012 14:39:50 +0900
+Subject: [PATCH] f2fs: clean up unused variables and return values
+
+This patch cleans up a couple of unnecessary codes related to unused variables
+and return values.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c   | 12 +++---------
+ fs/f2fs/hash.c |  4 +---
+ fs/f2fs/node.c |  6 +-----
+ 3 files changed, 5 insertions(+), 17 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index eda8230..b0ec721 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -390,9 +390,7 @@ next_step:
+ 		}
+ 
+ 		err = check_valid_map(sbi, segno, off);
+-		if (err == GC_ERROR)
+-			return err;
+-		else if (err == GC_NEXT)
++		if (err == GC_NEXT)
+ 			continue;
+ 
+ 		if (initial) {
+@@ -550,9 +548,7 @@ next_step:
+ 		}
+ 
+ 		err = check_valid_map(sbi, segno, off);
+-		if (err == GC_ERROR)
+-			goto stop;
+-		else if (err == GC_NEXT)
++		if (err == GC_NEXT)
+ 			continue;
+ 
+ 		if (phase == 0) {
+@@ -562,9 +558,7 @@ next_step:
+ 
+ 		/* Get an inode by ino with checking validity */
+ 		err = check_dnode(sbi, entry, &dni, start_addr + off, &nofs);
+-		if (err == GC_ERROR)
+-			goto stop;
+-		else if (err == GC_NEXT)
++		if (err == GC_NEXT)
+ 			continue;
+ 
+ 		if (phase == 1) {
+diff --git a/fs/f2fs/hash.c b/fs/f2fs/hash.c
+index 5e48bac..6977415 100644
+--- a/fs/f2fs/hash.c
++++ b/fs/f2fs/hash.c
+@@ -71,7 +71,7 @@ static void str2hashbuf(const char *msg, int len, unsigned int *buf, int num)
+ 
+ f2fs_hash_t f2fs_dentry_hash(const char *name, int len)
+ {
+-	__u32 hash, minor_hash;
++	__u32 hash;
+ 	f2fs_hash_t f2fs_hash;
+ 	const char *p;
+ 	__u32 in[8], buf[4];
+@@ -94,8 +94,6 @@ f2fs_hash_t f2fs_dentry_hash(const char *name, int len)
+ 		p += 16;
+ 	}
+ 	hash = buf[0];
+-	minor_hash = buf[1];
+-
+ 	f2fs_hash = cpu_to_le32(hash & ~F2FS_HASH_COL_BIT);
+ 	return f2fs_hash;
+ }
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index e85643c..5066bfd 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1088,7 +1088,6 @@ static int f2fs_write_node_page(struct page *page,
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(page->mapping->host->i_sb);
+ 	nid_t nid;
+-	unsigned int nofs;
+ 	block_t new_addr;
+ 	struct node_info ni;
+ 
+@@ -1105,7 +1104,6 @@ static int f2fs_write_node_page(struct page *page,
+ 
+ 	/* get old block addr of this node page */
+ 	nid = nid_of_node(page);
+-	nofs = ofs_of_node(page);
+ 	BUG_ON(page->index != nid);
+ 
+ 	get_node_info(sbi, nid, &ni);
+@@ -1566,7 +1564,7 @@ void flush_nat_entries(struct f2fs_sb_info *sbi)
+ 		nid_t nid;
+ 		struct f2fs_nat_entry raw_ne;
+ 		int offset = -1;
+-		block_t old_blkaddr, new_blkaddr;
++		block_t new_blkaddr;
+ 
+ 		ne = list_entry(cur, struct nat_entry, list);
+ 		nid = nat_get_nid(ne);
+@@ -1580,7 +1578,6 @@ void flush_nat_entries(struct f2fs_sb_info *sbi)
+ 		offset = lookup_journal_in_cursum(sum, NAT_JOURNAL, nid, 1);
+ 		if (offset >= 0) {
+ 			raw_ne = nat_in_journal(sum, offset);
+-			old_blkaddr = le32_to_cpu(raw_ne.block_addr);
+ 			goto flush_now;
+ 		}
+ to_nat_page:
+@@ -1602,7 +1599,6 @@ to_nat_page:
+ 
+ 		BUG_ON(!nat_blk);
+ 		raw_ne = nat_blk->entries[nid - start_nid];
+-		old_blkaddr = le32_to_cpu(raw_ne.block_addr);
+ flush_now:
+ 		new_blkaddr = nat_get_blkaddr(ne);
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

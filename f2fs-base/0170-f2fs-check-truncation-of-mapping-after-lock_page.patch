@@ -1,0 +1,187 @@
+From dacccdfd018f4c1011099e043656c032f8686f88 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 26 Apr 2013 11:55:17 +0900
+Subject: [PATCH] f2fs: check truncation of mapping after lock_page
+
+We call lock_page when we need to update a page after readpage.
+Between grab and lock page, the page can be truncated by other thread.
+So, we should check the page after lock_page whether it was truncated or not.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c |  4 ++++
+ fs/f2fs/data.c       | 18 +++++++++++++++---
+ fs/f2fs/file.c       |  4 ++++
+ fs/f2fs/node.c       | 20 ++++++++++++++++----
+ 4 files changed, 39 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 590ea50..b1de01d 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -65,6 +65,10 @@ repeat:
+ 		goto repeat;
+ 
+ 	lock_page(page);
++	if (page->mapping != mapping) {
++		f2fs_put_page(page, 1);
++		goto repeat;
++	}
+ out:
+ 	mark_page_accessed(page);
+ 	return page;
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 5e805ef8..e1b50b3 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -241,7 +241,7 @@ struct page *get_lock_data_page(struct inode *inode, pgoff_t index)
+ 
+ 	if (dn.data_blkaddr == NULL_ADDR)
+ 		return ERR_PTR(-ENOENT);
+-
++repeat:
+ 	page = grab_cache_page(mapping, index);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+@@ -261,6 +261,10 @@ struct page *get_lock_data_page(struct inode *inode, pgoff_t index)
+ 		f2fs_put_page(page, 1);
+ 		return ERR_PTR(-EIO);
+ 	}
++	if (page->mapping != mapping) {
++		f2fs_put_page(page, 1);
++		goto repeat;
++	}
+ 	return page;
+ }
+ 
+@@ -292,7 +296,7 @@ struct page *get_new_data_page(struct inode *inode, pgoff_t index,
+ 		}
+ 	}
+ 	f2fs_put_dnode(&dn);
+-
++repeat:
+ 	page = grab_cache_page(mapping, index);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+@@ -312,6 +316,10 @@ struct page *get_new_data_page(struct inode *inode, pgoff_t index,
+ 			f2fs_put_page(page, 1);
+ 			return ERR_PTR(-EIO);
+ 		}
++		if (page->mapping != mapping) {
++			f2fs_put_page(page, 1);
++			goto repeat;
++		}
+ 	}
+ 
+ 	if (new_i_size &&
+@@ -612,7 +620,7 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
+ 	*fsdata = NULL;
+ 
+ 	f2fs_balance_fs(sbi);
+-
++repeat:
+ 	page = grab_cache_page_write_begin(mapping, index, flags);
+ 	if (!page)
+ 		return -ENOMEM;
+@@ -657,6 +665,10 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
+ 			f2fs_put_page(page, 1);
+ 			return -EIO;
+ 		}
++		if (page->mapping != mapping) {
++			f2fs_put_page(page, 1);
++			goto repeat;
++		}
+ 	}
+ out:
+ 	SetPageUptodate(page);
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index d48f4a5..1cae864 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -217,6 +217,10 @@ static void truncate_partial_data_page(struct inode *inode, u64 from)
+ 		return;
+ 
+ 	lock_page(page);
++	if (page->mapping != inode->i_mapping) {
++		f2fs_put_page(page, 1);
++		return;
++	}
+ 	wait_on_page_writeback(page);
+ 	zero_user(page, offset, PAGE_CACHE_SIZE - offset);
+ 	set_page_dirty(page);
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index aede910..6ff0172 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -674,6 +674,7 @@ fail:
+ int truncate_inode_blocks(struct inode *inode, pgoff_t from)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
++	struct address_space *node_mapping = sbi->node_inode->i_mapping;
+ 	int err = 0, cont = 1;
+ 	int level, offset[4], noffset[4];
+ 	unsigned int nofs = 0;
+@@ -684,7 +685,7 @@ int truncate_inode_blocks(struct inode *inode, pgoff_t from)
+ 	trace_f2fs_truncate_inode_blocks_enter(inode, from);
+ 
+ 	level = get_node_path(from, offset, noffset);
+-
++restart:
+ 	page = get_node_page(sbi, inode->i_ino);
+ 	if (IS_ERR(page)) {
+ 		trace_f2fs_truncate_inode_blocks_exit(inode, PTR_ERR(page));
+@@ -748,6 +749,10 @@ skip_partial:
+ 		if (offset[1] == 0 &&
+ 				rn->i.i_nid[offset[0] - NODE_DIR1_BLOCK]) {
+ 			lock_page(page);
++			if (page->mapping != node_mapping) {
++				f2fs_put_page(page, 1);
++				goto restart;
++			}
+ 			wait_on_page_writeback(page);
+ 			rn->i.i_nid[offset[0] - NODE_DIR1_BLOCK] = 0;
+ 			set_page_dirty(page);
+@@ -916,7 +921,7 @@ struct page *get_node_page(struct f2fs_sb_info *sbi, pgoff_t nid)
+ 	struct address_space *mapping = sbi->node_inode->i_mapping;
+ 	struct page *page;
+ 	int err;
+-
++repeat:
+ 	page = grab_cache_page(mapping, nid);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+@@ -932,6 +937,10 @@ struct page *get_node_page(struct f2fs_sb_info *sbi, pgoff_t nid)
+ 		f2fs_put_page(page, 1);
+ 		return ERR_PTR(-EIO);
+ 	}
++	if (page->mapping != mapping) {
++		f2fs_put_page(page, 1);
++		goto repeat;
++	}
+ got_it:
+ 	BUG_ON(nid != nid_of_node(page));
+ 	mark_page_accessed(page);
+@@ -955,7 +964,7 @@ struct page *get_node_page_ra(struct page *parent, int start)
+ 	nid = get_nid(parent, start, false);
+ 	if (!nid)
+ 		return ERR_PTR(-ENOENT);
+-
++repeat:
+ 	page = grab_cache_page(mapping, nid);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+@@ -981,7 +990,10 @@ struct page *get_node_page_ra(struct page *parent, int start)
+ 	blk_finish_plug(&plug);
+ 
+ 	lock_page(page);
+-
++	if (page->mapping != mapping) {
++		f2fs_put_page(page, 1);
++		goto repeat;
++	}
+ page_hit:
+ 	if (!PageUptodate(page)) {
+ 		f2fs_put_page(page, 1);
+-- 
+1.8.2.1.422.gdcd8c09
+

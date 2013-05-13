@@ -1,0 +1,39 @@
+From 5d41f27446eda8356ab2d0854bc2b99ca33f6abf Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 12 Dec 2012 09:47:39 +0900
+Subject: [PATCH] f2fs: remove set_page_dirty for atomic f2fs_end_io_write
+
+We should guarantee not to do *scheduling while atomic*.
+I found, in atomic f2fs_end_io_write(), there is a set_page_dirty() call
+to deal with IO errors.
+
+But, set_page_dirty() calls:
+ -> f2fs_set_data_page_dirty()
+   -> set_dirty_dir_page()
+      -> cond_resched() which results in scheduling.
+
+In order to avoid this, I'd like to remove simply set_page_dirty(),
+since the page is already marked as ERROR and f2fs will be operated
+as the read-only mode as well.
+So, there is no recovery issue with this.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 1b26e4e..8bc1b6f 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -631,7 +631,6 @@ static void f2fs_end_io_write(struct bio *bio, int err)
+ 			if (page->mapping)
+ 				set_bit(AS_EIO, &page->mapping->flags);
+ 			set_ckpt_flags(p->sbi->ckpt, CP_ERROR_FLAG);
+-			set_page_dirty(page);
+ 		}
+ 		end_page_writeback(page);
+ 		dec_page_count(p->sbi, F2FS_WRITEBACK);
+-- 
+1.8.2.1.422.gdcd8c09
+

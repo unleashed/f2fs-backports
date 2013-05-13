@@ -1,0 +1,47 @@
+From 6e508c8c01e46adbdd1b6a2d7be4dcbedbe48aff Mon Sep 17 00:00:00 2001
+From: majianpeng <majianpeng@gmail.com>
+Date: Tue, 29 Jan 2013 16:19:02 +0800
+Subject: [PATCH] f2fs: clean up the add_orphan_inode func
+
+For the code
+> prev = list_entry(orphan->list.prev, typeof(*prev), list);
+if orphan->list.prev == head, it can't get the right prev.
+And we can use the parameter 'this' to add.
+
+Signed-off-by: Jianpeng Ma <majianpeng@gmail.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 16 ++++------------
+ 1 file changed, 4 insertions(+), 12 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 9c16271..d3b34d0 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -219,19 +219,11 @@ retry:
+ 	new->ino = ino;
+ 
+ 	/* add new_oentry into list which is sorted by inode number */
+-	if (orphan) {
+-		struct orphan_inode_entry *prev;
+-
+-		/* get previous entry */
+-		prev = list_entry(orphan->list.prev, typeof(*prev), list);
+-		if (&prev->list != head)
+-			/* insert new orphan inode entry */
+-			list_add(&new->list, &prev->list);
+-		else
+-			list_add(&new->list, head);
+-	} else {
++	if (orphan)
++		list_add(&new->list, this->prev);
++	else
+ 		list_add_tail(&new->list, head);
+-	}
++
+ 	sbi->n_orphans++;
+ out:
+ 	mutex_unlock(&sbi->orphan_inode_mutex);
+-- 
+1.8.2.1.422.gdcd8c09
+

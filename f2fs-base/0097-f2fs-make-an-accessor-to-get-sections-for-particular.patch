@@ -1,0 +1,80 @@
+From 90cdabf60bc949a710de159a60c870aca06e3781 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 2 Feb 2013 23:52:59 +0900
+Subject: [PATCH] f2fs: make an accessor to get sections for particular block
+ type
+
+Introduce accessor to get the sections based upon the block type
+(node,dents...) and modify the functions : should_do_checkpoint,
+has_not_enough_free_secs to use this accessor function to get
+the node sections and dent sections.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h    | 8 ++++++++
+ fs/f2fs/gc.h      | 8 ++------
+ fs/f2fs/segment.h | 9 ++-------
+ 3 files changed, 12 insertions(+), 13 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 5022a7d..87840bc 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -573,6 +573,14 @@ static inline int get_pages(struct f2fs_sb_info *sbi, int count_type)
+ 	return atomic_read(&sbi->nr_pages[count_type]);
+ }
+ 
++static inline int get_blocktype_secs(struct f2fs_sb_info *sbi, int block_type)
++{
++	unsigned int pages_per_sec = sbi->segs_per_sec *
++					(1 << sbi->log_blocks_per_seg);
++	return ((get_pages(sbi, block_type) + pages_per_sec - 1)
++			>> sbi->log_blocks_per_seg) / sbi->segs_per_sec;
++}
++
+ static inline block_t valid_user_blocks(struct f2fs_sb_info *sbi)
+ {
+ 	block_t ret;
+diff --git a/fs/f2fs/gc.h b/fs/f2fs/gc.h
+index 3abdf83..c407a75 100644
+--- a/fs/f2fs/gc.h
++++ b/fs/f2fs/gc.h
+@@ -106,11 +106,7 @@ static inline int is_idle(struct f2fs_sb_info *sbi)
+ 
+ static inline bool should_do_checkpoint(struct f2fs_sb_info *sbi)
+ {
+-	unsigned int pages_per_sec = sbi->segs_per_sec *
+-					(1 << sbi->log_blocks_per_seg);
+-	int node_secs = ((get_pages(sbi, F2FS_DIRTY_NODES) + pages_per_sec - 1)
+-			>> sbi->log_blocks_per_seg) / sbi->segs_per_sec;
+-	int dent_secs = ((get_pages(sbi, F2FS_DIRTY_DENTS) + pages_per_sec - 1)
+-			>> sbi->log_blocks_per_seg) / sbi->segs_per_sec;
++	int node_secs = get_blocktype_secs(sbi, F2FS_DIRTY_NODES);
++	int dent_secs = get_blocktype_secs(sbi, F2FS_DIRTY_DENTS);
+ 	return free_sections(sbi) <= (node_secs + 2 * dent_secs + 2);
+ }
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index 66a288a..a9417b9 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -459,13 +459,8 @@ static inline int get_ssr_segment(struct f2fs_sb_info *sbi, int type)
+ 
+ static inline bool has_not_enough_free_secs(struct f2fs_sb_info *sbi)
+ {
+-	unsigned int pages_per_sec = (1 << sbi->log_blocks_per_seg) *
+-			sbi->segs_per_sec;
+-	int node_secs = ((get_pages(sbi, F2FS_DIRTY_NODES) + pages_per_sec - 1)
+-			>> sbi->log_blocks_per_seg) / sbi->segs_per_sec;
+-	int dent_secs = ((get_pages(sbi, F2FS_DIRTY_DENTS) + pages_per_sec - 1)
+-			>> sbi->log_blocks_per_seg) / sbi->segs_per_sec;
+-
++	int node_secs = get_blocktype_secs(sbi, F2FS_DIRTY_NODES);
++	int dent_secs = get_blocktype_secs(sbi, F2FS_DIRTY_DENTS);
+ 	if (sbi->por_doing)
+ 		return false;
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

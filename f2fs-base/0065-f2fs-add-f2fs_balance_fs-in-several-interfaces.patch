@@ -1,0 +1,98 @@
+From ca200b6d371c8de860aa8c344dd66b1ff7b6b7af Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 11 Jan 2013 13:10:49 +0900
+Subject: [PATCH] f2fs: add f2fs_balance_fs in several interfaces
+
+The f2fs_balance_fs() is to check the number of free sections and decide whether
+it needs to conduct cleaning or not. If there are not enough free sections, the
+cleaning job should be started.
+
+In order to control an amount of free sections even under high utilization, f2fs
+should call f2fs_balance_fs at all the VFS interfaces that are able to produce
+dirty pages.
+This patch adds the function calls in the missing interfaces as follows.
+
+1. f2fs_setxattr()
+The f2fs_setxattr() produces dirty node pages so that we should call
+f2fs_balance_fs() either likewise doing in other VFS interfaces such as
+f2fs_lookup(), f2fs_mkdir(), and so on.
+
+2. f2fs_sync_file()
+We should guarantee serving free sections for syncing metadata during fsync.
+Previously, there is no space check before triggering checkpoint and
+sync_node_pages.
+Therefore, if a bunch of fsync calls are triggered under 100% of FS utilization,
+f2fs is able to be faced with no free sections, resulting in BUG_ON().
+
+3. f2fs_sync_fs()
+Before calling write_checkpoint(), we should guarantee that there are minimum
+free sections.
+
+4. f2fs_write_inode()
+f2fs_write_inode() is also able to produce dirty node pages.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/file.c  | 3 +++
+ fs/f2fs/inode.c | 3 +++
+ fs/f2fs/super.c | 2 ++
+ fs/f2fs/xattr.c | 2 ++
+ 4 files changed, 10 insertions(+)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 88593c5..7354c2d 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -137,6 +137,9 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 	if (ret)
+ 		return ret;
+ 
++	/* guarantee free sections for fsync */
++	f2fs_balance_fs(sbi);
++
+ 	mutex_lock(&inode->i_mutex);
+ 
+ 	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index bf20b4d..7942417 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -217,6 +217,9 @@ int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
+ 			inode->i_ino == F2FS_META_INO(sbi))
+ 		return 0;
+ 
++	if (wbc)
++		f2fs_balance_fs(sbi);
++
+ 	node_page = get_node_page(sbi, inode->i_ino);
+ 	if (IS_ERR(node_page))
+ 		return PTR_ERR(node_page);
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index afa7ef0..0f2b2eb 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -137,6 +137,8 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
+ 
+ 	if (sync)
+ 		write_checkpoint(sbi, false, false);
++	else
++		f2fs_balance_fs(sbi);
+ 
+ 	return 0;
+ }
+diff --git a/fs/f2fs/xattr.c b/fs/f2fs/xattr.c
+index 940136a..8038c04 100644
+--- a/fs/f2fs/xattr.c
++++ b/fs/f2fs/xattr.c
+@@ -318,6 +318,8 @@ int f2fs_setxattr(struct inode *inode, int name_index, const char *name,
+ 	if (name_len > 255 || value_len > MAX_VALUE_LEN)
+ 		return -ERANGE;
+ 
++	f2fs_balance_fs(sbi);
++
+ 	mutex_lock_op(sbi, NODE_NEW);
+ 	if (!fi->i_xattr_nid) {
+ 		/* Allocate new attribute block */
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,121 @@
+From 6b71a9c8e3dbffaac4b25b7d87462f98f33b6f1b Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Tue, 23 Apr 2013 17:00:52 +0900
+Subject: [PATCH] f2fs: add tracepoints to debug the block allocation
+
+Add tracepoints to debug the block allocation & fallocate.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Pankaj Kumar <pankaj.km@samsung.com>
+Acked-by: Steven Rostedt <rostedt@goodmis.org>
+[Jaegeuk: enhance information]
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c              |  2 ++
+ fs/f2fs/file.c              |  1 +
+ include/trace/events/f2fs.h | 64 +++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 67 insertions(+)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 3398918..b55f500 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -56,6 +56,8 @@ int reserve_new_block(struct dnode_of_data *dn)
+ 	if (!inc_valid_block_count(sbi, dn->inode, 1))
+ 		return -ENOSPC;
+ 
++	trace_f2fs_reserve_new_block(dn->inode, dn->nid, dn->ofs_in_node);
++
+ 	__set_data_blkaddr(dn, NEW_ADDR);
+ 	dn->data_blkaddr = NEW_ADDR;
+ 	sync_inode_page(dn);
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index f81a347..5cc4dd8 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -546,6 +546,7 @@ static long f2fs_fallocate(struct file *file, int mode,
+ 		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+ 		mark_inode_dirty(inode);
+ 	}
++	trace_f2fs_fallocate(inode, mode, offset, len, ret);
+ 	return ret;
+ }
+ 
+diff --git a/include/trace/events/f2fs.h b/include/trace/events/f2fs.h
+index 6f7cf7a..56b6240 100644
+--- a/include/trace/events/f2fs.h
++++ b/include/trace/events/f2fs.h
+@@ -514,6 +514,70 @@ TRACE_EVENT(f2fs_get_victim,
+ 		__entry->free)
+ );
+ 
++TRACE_EVENT(f2fs_fallocate,
++
++	TP_PROTO(struct inode *inode, int mode,
++				loff_t offset, loff_t len, int ret),
++
++	TP_ARGS(inode, mode, offset, len, ret),
++
++	TP_STRUCT__entry(
++		__field(dev_t,	dev)
++		__field(ino_t,	ino)
++		__field(int,	mode)
++		__field(loff_t,	offset)
++		__field(loff_t,	len)
++		__field(loff_t, size)
++		__field(blkcnt_t, blocks)
++		__field(int,	ret)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->ino	= inode->i_ino;
++		__entry->mode	= mode;
++		__entry->offset	= offset;
++		__entry->len	= len;
++		__entry->size	= inode->i_size;
++		__entry->blocks = inode->i_blocks;
++		__entry->ret	= ret;
++	),
++
++	TP_printk("dev = (%d,%d), ino = %lu, mode = %x, offset = %lld, "
++		"len = %lld,  i_size = %lld, i_blocks = %llu, ret = %d",
++		show_dev_ino(__entry),
++		__entry->mode,
++		(unsigned long long)__entry->offset,
++		(unsigned long long)__entry->len,
++		(unsigned long long)__entry->size,
++		(unsigned long long)__entry->blocks,
++		__entry->ret)
++);
++
++TRACE_EVENT(f2fs_reserve_new_block,
++
++	TP_PROTO(struct inode *inode, nid_t nid, unsigned int ofs_in_node),
++
++	TP_ARGS(inode, nid, ofs_in_node),
++
++	TP_STRUCT__entry(
++		__field(dev_t,	dev)
++		__field(nid_t, nid)
++		__field(unsigned int, ofs_in_node)
++	),
++
++	TP_fast_assign(
++		__entry->dev	= inode->i_sb->s_dev;
++		__entry->nid	= nid;
++		__entry->ofs_in_node = ofs_in_node;
++	),
++
++	TP_printk("dev = (%d,%d), nid = %u, ofs_in_node = %u",
++		show_dev(__entry),
++		(unsigned int)__entry->nid,
++		__entry->ofs_in_node)
++);
++
+ #endif /* _TRACE_F2FS_H */
+ 
+  /* This part must be outside protection */
+-- 
+1.8.2.1.422.gdcd8c09
+

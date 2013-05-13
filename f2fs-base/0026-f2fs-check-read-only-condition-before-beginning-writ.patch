@@ -1,0 +1,40 @@
+From 75443ce5bbaaed32d49574a3dda2022de4c21cb9 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 1 Dec 2012 10:56:01 +0900
+Subject: [PATCH] f2fs: check read only condition before beginning write out
+
+If the filesystem is mounted as read-only then return from that point itself
+instead of first doing a writeout/wait and then checking for read-only
+condition.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+---
+ fs/f2fs/file.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index c1a108f..89241c5 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -132,14 +132,15 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 		.for_reclaim = 0,
+ 	};
+ 
++	if (inode->i_sb->s_flags & MS_RDONLY)
++		return 0;
++
+ 	ret = filemap_write_and_wait_range(inode->i_mapping, start, end);
+ 	if (ret)
+ 		return ret;
+ 
+ 	mutex_lock(&inode->i_mutex);
+ 
+-	if (inode->i_sb->s_flags & MS_RDONLY)
+-		goto out;
+ 	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
+ 		goto out;
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

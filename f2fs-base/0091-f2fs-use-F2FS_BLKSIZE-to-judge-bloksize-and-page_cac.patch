@@ -1,0 +1,48 @@
+From 2709a60832965457d363add83ba2899b998f3b43 Mon Sep 17 00:00:00 2001
+From: majianpeng <majianpeng@gmail.com>
+Date: Fri, 1 Feb 2013 19:07:57 +0800
+Subject: [PATCH] f2fs: use F2FS_BLKSIZE to judge bloksize and page_cache_size
+
+In some system PAGE_CACHE_SIZE isn't 4K. So using F2FS_BLKSIZE to judge.
+
+By Jaegeuk Kim:
+ o f2fs does not support no other 4KB page cache size.
+
+Signed-off-by: Jianpeng Ma <majianpeng@gmail.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/super.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 0b18aee..1d7fe11 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -384,14 +384,23 @@ static int sanity_check_raw_super(struct super_block *sb,
+ 		return 1;
+ 	}
+ 
++	/* Currently, support only 4KB page cache size */
++	if (F2FS_BLKSIZE != PAGE_CACHE_SIZE) {
++		f2fs_msg(sb, KERN_INFO,
++			"Invalid page_cache_size (%u), supports only 4KB\n",
++			PAGE_CACHE_SIZE);
++		return 1;
++	}
++
+ 	/* Currently, support only 4KB block size */
+ 	blocksize = 1 << le32_to_cpu(raw_super->log_blocksize);
+-	if (blocksize != PAGE_CACHE_SIZE) {
++	if (blocksize != F2FS_BLKSIZE) {
+ 		f2fs_msg(sb, KERN_INFO,
+ 			"Invalid blocksize (%u), supports only 4KB\n",
+ 			blocksize);
+ 		return 1;
+ 	}
++
+ 	if (le32_to_cpu(raw_super->log_sectorsize) !=
+ 					F2FS_LOG_SECTOR_SIZE) {
+ 		f2fs_msg(sb, KERN_INFO, "Invalid log sectorsize");
+-- 
+1.8.2.1.422.gdcd8c09
+

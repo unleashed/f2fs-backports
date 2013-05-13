@@ -1,0 +1,60 @@
+From abfbd44e39c2478f36754be003eae31e91f3a8f2 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 2 Feb 2013 23:51:51 +0900
+Subject: [PATCH] f2fs: optimize get node page readahead part
+
+We can remove the call to find_get_page to get a page from the cache
+and check for up-to-date, instead we can make use of grab_cache_page
+part itself to fetch the page from the cache.
+So, removing the call and moving the PageUptodate at proper place, also
+taken care of moving the lock_page condition in the page_hit part.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index d408e69..58f7216 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -921,19 +921,17 @@ struct page *get_node_page_ra(struct page *parent, int start)
+ 	if (!nid)
+ 		return ERR_PTR(-ENOENT);
+ 
+-	page = find_get_page(mapping, nid);
+-	if (page && PageUptodate(page))
+-		goto page_hit;
+-	f2fs_put_page(page, 0);
+-
+ repeat:
+ 	page = grab_cache_page(mapping, nid);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
++	else if (PageUptodate(page))
++		goto page_hit;
+ 
+ 	err = read_node_page(page, READ_SYNC);
++	unlock_page(page);
+ 	if (err) {
+-		f2fs_put_page(page, 1);
++		f2fs_put_page(page, 0);
+ 		return ERR_PTR(err);
+ 	}
+ 
+@@ -947,8 +945,9 @@ repeat:
+ 		ra_node_page(sbi, nid);
+ 	}
+ 
+-page_hit:
+ 	lock_page(page);
++
++page_hit:
+ 	if (PageError(page)) {
+ 		f2fs_put_page(page, 1);
+ 		return ERR_PTR(-EIO);
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,145 @@
+From 8d63a795cd40d57a4c9737a5d6c273178a5ed1e7 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 3 Jan 2013 17:55:52 +0900
+Subject: [PATCH] f2fs: revisit the f2fs_gc flow
+
+I'd like to revisit the f2fs_gc flow and rewrite as follows.
+
+1. In practical, the nGC parameter of f2fs_gc is meaningless. So, let's
+  remove it.
+2. Background GC marks victim blocks as dirty one at a time.
+3. Foreground GC should do cleaning job until acquiring enough free
+  sections. Afterwards, it needs to do checkpoint.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h    |  2 +-
+ fs/f2fs/gc.c      | 60 +++++++++++++++++++------------------------------------
+ fs/f2fs/segment.c |  2 +-
+ 3 files changed, 23 insertions(+), 41 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 2807132..285e43d 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -986,7 +986,7 @@ int do_write_data_page(struct page *);
+ int start_gc_thread(struct f2fs_sb_info *);
+ void stop_gc_thread(struct f2fs_sb_info *);
+ block_t start_bidx_of_node(unsigned int);
+-int f2fs_gc(struct f2fs_sb_info *, int);
++int f2fs_gc(struct f2fs_sb_info *);
+ void build_gc_manager(struct f2fs_sb_info *);
+ int create_gc_caches(void);
+ void destroy_gc_caches(void);
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index b0ec721..b4dd90c 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -78,7 +78,7 @@ static int gc_thread_func(void *data)
+ 
+ 		sbi->bg_gc++;
+ 
+-		if (f2fs_gc(sbi, 1) == GC_NONE)
++		if (f2fs_gc(sbi) == GC_NONE)
+ 			wait_ms = GC_THREAD_NOGC_SLEEP_TIME;
+ 		else if (wait_ms == GC_THREAD_NOGC_SLEEP_TIME)
+ 			wait_ms = GC_THREAD_MAX_SLEEP_TIME;
+@@ -651,62 +651,44 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
+ 	return ret;
+ }
+ 
+-int f2fs_gc(struct f2fs_sb_info *sbi, int nGC)
++int f2fs_gc(struct f2fs_sb_info *sbi)
+ {
+-	unsigned int segno;
+-	int old_free_secs, cur_free_secs;
+-	int gc_status, nfree;
+ 	struct list_head ilist;
++	unsigned int segno, i;
+ 	int gc_type = BG_GC;
++	int gc_status = GC_NONE;
+ 
+ 	INIT_LIST_HEAD(&ilist);
+ gc_more:
+-	nfree = 0;
+-	gc_status = GC_NONE;
++	if (!(sbi->sb->s_flags & MS_ACTIVE))
++		goto stop;
+ 
+ 	if (has_not_enough_free_secs(sbi))
+-		old_free_secs = reserved_sections(sbi);
+-	else
+-		old_free_secs = free_sections(sbi);
+-
+-	while (sbi->sb->s_flags & MS_ACTIVE) {
+-		int i;
+-		if (has_not_enough_free_secs(sbi))
+-			gc_type = FG_GC;
++		gc_type = FG_GC;
+ 
+-		cur_free_secs = free_sections(sbi) + nfree;
++	if (!__get_victim(sbi, &segno, gc_type, NO_CHECK_TYPE))
++		goto stop;
+ 
+-		/* We got free space successfully. */
+-		if (nGC < cur_free_secs - old_free_secs)
+-			break;
+-
+-		if (!__get_victim(sbi, &segno, gc_type, NO_CHECK_TYPE))
++	for (i = 0; i < sbi->segs_per_sec; i++) {
++		/*
++		 * do_garbage_collect will give us three gc_status:
++		 * GC_ERROR, GC_DONE, and GC_BLOCKED.
++		 * If GC is finished uncleanly, we have to return
++		 * the victim to dirty segment list.
++		 */
++		gc_status = do_garbage_collect(sbi, segno + i, &ilist, gc_type);
++		if (gc_status != GC_DONE)
+ 			break;
+-
+-		for (i = 0; i < sbi->segs_per_sec; i++) {
+-			/*
+-			 * do_garbage_collect will give us three gc_status:
+-			 * GC_ERROR, GC_DONE, and GC_BLOCKED.
+-			 * If GC is finished uncleanly, we have to return
+-			 * the victim to dirty segment list.
+-			 */
+-			gc_status = do_garbage_collect(sbi, segno + i,
+-					&ilist, gc_type);
+-			if (gc_status != GC_DONE)
+-				goto stop;
+-			nfree++;
+-		}
+ 	}
+-stop:
+-	if (has_not_enough_free_secs(sbi) || gc_status == GC_BLOCKED) {
++	if (has_not_enough_free_secs(sbi)) {
+ 		write_checkpoint(sbi, (gc_status == GC_BLOCKED), false);
+-		if (nfree)
++		if (has_not_enough_free_secs(sbi))
+ 			goto gc_more;
+ 	}
++stop:
+ 	mutex_unlock(&sbi->gc_mutex);
+ 
+ 	put_gc_inode(&ilist);
+-	BUG_ON(!list_empty(&ilist));
+ 	return gc_status;
+ }
+ 
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index de62409..4b00990 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -31,7 +31,7 @@ void f2fs_balance_fs(struct f2fs_sb_info *sbi)
+ 	 */
+ 	if (has_not_enough_free_secs(sbi)) {
+ 		mutex_lock(&sbi->gc_mutex);
+-		f2fs_gc(sbi, 1);
++		f2fs_gc(sbi);
+ 	}
+ }
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

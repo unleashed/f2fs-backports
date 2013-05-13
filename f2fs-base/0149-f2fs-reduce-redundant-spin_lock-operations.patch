@@ -1,0 +1,52 @@
+From 27127b1017d09cf1101f3c3f75bba4219abcbc15 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 3 Apr 2013 22:19:03 +0900
+Subject: [PATCH] f2fs: reduce redundant spin_lock operations
+
+This patch reduces redundant spin_lock operations in alloc_nid_failed().
+The alloc_nid_failed() does not need to delete entry and add one again
+by triggering spin_lock and spin_unlock redundantly.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 95298ef..ad3adbe 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1407,10 +1407,8 @@ void alloc_nid_done(struct f2fs_sb_info *sbi, nid_t nid)
+ 
+ 	spin_lock(&nm_i->free_nid_list_lock);
+ 	i = __lookup_free_nid_list(nid, &nm_i->free_nid_list);
+-	if (i) {
+-		BUG_ON(i->state != NID_ALLOC);
+-		__del_from_free_nid_list(i);
+-	}
++	BUG_ON(!i || i->state != NID_ALLOC);
++	__del_from_free_nid_list(i);
+ 	spin_unlock(&nm_i->free_nid_list_lock);
+ }
+ 
+@@ -1419,8 +1417,15 @@ void alloc_nid_done(struct f2fs_sb_info *sbi, nid_t nid)
+  */
+ void alloc_nid_failed(struct f2fs_sb_info *sbi, nid_t nid)
+ {
+-	alloc_nid_done(sbi, nid);
+-	add_free_nid(NM_I(sbi), nid);
++	struct f2fs_nm_info *nm_i = NM_I(sbi);
++	struct free_nid *i;
++
++	spin_lock(&nm_i->free_nid_list_lock);
++	i = __lookup_free_nid_list(nid, &nm_i->free_nid_list);
++	BUG_ON(!i || i->state != NID_ALLOC);
++	i->state = NID_NEW;
++	nm_i->fcnt++;
++	spin_unlock(&nm_i->free_nid_list_lock);
+ }
+ 
+ void recover_node_page(struct f2fs_sb_info *sbi, struct page *page,
+-- 
+1.8.2.1.422.gdcd8c09
+

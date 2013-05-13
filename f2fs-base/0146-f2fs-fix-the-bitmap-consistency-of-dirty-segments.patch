@@ -1,0 +1,93 @@
+From 8cd597774c6c3ede205ebf08832bc4727ebd6fe6 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 1 Apr 2013 13:52:09 +0900
+Subject: [PATCH] f2fs: fix the bitmap consistency of dirty segments
+
+Like below, there are 8 segment bitmaps for SSR victim candidates.
+
+enum dirty_type {
+	DIRTY_HOT_DATA,		/* dirty segments assigned as hot data logs */
+	DIRTY_WARM_DATA,	/* dirty segments assigned as warm data logs */
+	DIRTY_COLD_DATA,	/* dirty segments assigned as cold data logs */
+	DIRTY_HOT_NODE,		/* dirty segments assigned as hot node logs */
+	DIRTY_WARM_NODE,	/* dirty segments assigned as warm node logs */
+	DIRTY_COLD_NODE,	/* dirty segments assigned as cold node logs */
+	DIRTY,			/* to count # of dirty segments */
+	PRE,			/* to count # of entirely obsolete segments */
+	NR_DIRTY_TYPE
+};
+
+The upper 6 bitmaps indicates segments dirtied by active log areas respectively.
+And, the DIRTY bitmap integrates all the 6 bitmaps.
+
+For example,
+ o DIRTY_HOT_DATA : 1010000
+ o DIRTY_WARM_DATA: 0100000
+ o DIRTY_COLD_DATA: 0001000
+ o DIRTY_HOT_NODE : 0000010
+ o DIRTY_WARM_NODE: 0000001
+ o DIRTY_COLD_NODE: 0000000
+In this case,
+ o DIRTY          : 1111011,
+
+ which means that we should guarantee the consistency between DIRTY and other
+ bitmaps concreately.
+
+However, the SSR mode selects victims freely from any log types, which can set
+multiple bits across the various bitmap types.
+
+So, this patch eliminates this inconsistency.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.c | 23 ++++++++++++++++++-----
+ 1 file changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index fe520d3..7c67ec2 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -49,9 +49,20 @@ static void __locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno,
+ 
+ 	if (dirty_type == DIRTY) {
+ 		struct seg_entry *sentry = get_seg_entry(sbi, segno);
++		enum dirty_type t = DIRTY_HOT_DATA;
++
+ 		dirty_type = sentry->type;
++
+ 		if (!test_and_set_bit(segno, dirty_i->dirty_segmap[dirty_type]))
+ 			dirty_i->nr_dirty[dirty_type]++;
++
++		/* Only one bitmap should be set */
++		for (; t <= DIRTY_COLD_NODE; t++) {
++			if (t == dirty_type)
++				continue;
++			if (test_and_clear_bit(segno, dirty_i->dirty_segmap[t]))
++				dirty_i->nr_dirty[t]--;
++		}
+ 	}
+ }
+ 
+@@ -64,11 +75,13 @@ static void __remove_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno,
+ 		dirty_i->nr_dirty[dirty_type]--;
+ 
+ 	if (dirty_type == DIRTY) {
+-		struct seg_entry *sentry = get_seg_entry(sbi, segno);
+-		dirty_type = sentry->type;
+-		if (test_and_clear_bit(segno,
+-					dirty_i->dirty_segmap[dirty_type]))
+-			dirty_i->nr_dirty[dirty_type]--;
++		enum dirty_type t = DIRTY_HOT_DATA;
++
++		/* clear all the bitmaps */
++		for (; t <= DIRTY_COLD_NODE; t++)
++			if (test_and_clear_bit(segno, dirty_i->dirty_segmap[t]))
++				dirty_i->nr_dirty[t]--;
++
+ 		if (get_valid_blocks(sbi, segno, sbi->segs_per_sec) == 0)
+ 			clear_bit(GET_SECNO(sbi, segno),
+ 						dirty_i->victim_secmap);
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,36 @@
+From 9b9a730c1ed487fcc6d7da6b7a11f5d4d13bc4c9 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 14 Mar 2013 08:49:58 +0900
+Subject: [PATCH] f2fs: scan next nat page to reuse free nids in there
+
+When we build new free nids, let's scan the just next NAT page instead of
+skipping a couple of previously scanned pages in order to reuse free nids in
+there.
+Otherwise, we can use too much wide range of nids even though several nids were
+deallocated, and also their node pages can be cached in the node_inode's address
+space.
+This means that we can retain lots of clean pages in the main memory, which
+induces mm's reclaiming overhead.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 90221cc..94951d9 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1317,7 +1317,8 @@ static void build_free_nids(struct f2fs_sb_info *sbi)
+ 			break;
+ 	}
+ 
+-	nm_i->next_scan_nid = nid;
++	/* go to the next nat page in order to reuse free nids first */
++	nm_i->next_scan_nid = nm_i->init_scan_nid + NAT_ENTRY_PER_BLOCK;
+ 
+ 	/* find free nids from current sum_pages */
+ 	mutex_lock(&curseg->curseg_mutex);
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,44 @@
+From 9302575b56be8254de8351427e30502664d4970a Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sun, 30 Dec 2012 14:53:08 +0900
+Subject: [PATCH] f2fs: remove unneeded INIT_LIST_HEAD at few places
+
+While creating a new entry for addition to the list(orphan inode list
+and fsync inode entry list), there is no need to call HEAD initialization
+for these entries. So, remove that init part.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 1 -
+ fs/f2fs/recovery.c   | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 6ef36c3..d75c86a 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -214,7 +214,6 @@ retry:
+ 		goto retry;
+ 	}
+ 	new->ino = ino;
+-	INIT_LIST_HEAD(&new->list);
+ 
+ 	/* add new_oentry into list which is sorted by inode number */
+ 	if (orphan) {
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index b571fee..502c63d 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -151,7 +151,6 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 				goto out;
+ 			}
+ 
+-			INIT_LIST_HEAD(&entry->list);
+ 			list_add_tail(&entry->list, head);
+ 			entry->blkaddr = blkaddr;
+ 		}
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,27 @@
+From 4432bd367c48acb2440fdd95f67bdcc82ba7ebe1 Mon Sep 17 00:00:00 2001
+From: Sachin Kamat <sachin.kamat@linaro.org>
+Date: Tue, 27 Nov 2012 16:02:16 +0530
+Subject: [PATCH] f2fs: remove unneeded version.h header file from f2fs.h
+
+Including <linux/version.h> is not necessary.
+
+Signed-off-by: Sachin Kamat <sachin.kamat@linaro.org>
+---
+ fs/f2fs/f2fs.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 7aa70b5..d3f5a70 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -14,7 +14,6 @@
+ #include <linux/types.h>
+ #include <linux/page-flags.h>
+ #include <linux/buffer_head.h>
+-#include <linux/version.h>
+ #include <linux/slab.h>
+ #include <linux/crc32.h>
+ #include <linux/magic.h>
+-- 
+1.8.2.1.422.gdcd8c09
+

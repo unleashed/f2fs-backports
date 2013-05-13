@@ -1,0 +1,38 @@
+From 79dcb083ce02f749837916ea6e563fc86c1b21d6 Mon Sep 17 00:00:00 2001
+From: Haicheng Li <haicheng.li@linux.intel.com>
+Date: Sun, 28 Apr 2013 19:16:06 +0800
+Subject: [PATCH] f2fs: fix inconsistent using of NM_WOUT_THRESHOLD
+
+try_to_free_nats() is usually called with parameter nr_shrink as
+	"nm_i->nat_cnt - NM_WOUT_THRESHOLD"
+by flush_nat_entries() during checkpointing process.
+
+However, this is inconsistent with the actual threshold check as
+	"if (nm_i->nat_cnt < 2 * NM_WOUT_THRESHOLD)"
+, which will ignore the free_nats requests when
+	NM_WOUT_THRESHOLD < nm_i->nat_cnt < 2 * NM_WOUT_THRESHOLD
+
+So fix the threshold check condition.
+
+Signed-off-by: Haicheng Li <haicheng.li@linux.intel.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 6ff0172..f14eb7b 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -244,7 +244,7 @@ static int try_to_free_nats(struct f2fs_sb_info *sbi, int nr_shrink)
+ {
+ 	struct f2fs_nm_info *nm_i = NM_I(sbi);
+ 
+-	if (nm_i->nat_cnt < 2 * NM_WOUT_THRESHOLD)
++	if (nm_i->nat_cnt <= NM_WOUT_THRESHOLD)
+ 		return 0;
+ 
+ 	write_lock(&nm_i->nat_tree_lock);
+-- 
+1.8.2.1.422.gdcd8c09
+

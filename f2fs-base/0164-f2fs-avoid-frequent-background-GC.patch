@@ -1,0 +1,70 @@
+From ecb2489b3de5f8065569f1ca5e5264b806a4740a Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 24 Apr 2013 13:00:14 +0900
+Subject: [PATCH] f2fs: avoid frequent background GC
+
+If there is no victim segments selected by background GC, let's wait
+a little bit longer time to collect dirty segments.
+By default, let's give 5 minutes.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c |  3 ---
+ fs/f2fs/gc.h | 12 +++++++++---
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 1ca3324..6ed3263 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -82,9 +82,6 @@ static int gc_thread_func(void *data)
+ 		/* if return value is not zero, no victim was selected */
+ 		if (f2fs_gc(sbi))
+ 			wait_ms = GC_THREAD_NOGC_SLEEP_TIME;
+-		else if (wait_ms == GC_THREAD_NOGC_SLEEP_TIME)
+-			wait_ms = GC_THREAD_MAX_SLEEP_TIME;
+-
+ 	} while (!kthread_should_stop());
+ 	return 0;
+ }
+diff --git a/fs/f2fs/gc.h b/fs/f2fs/gc.h
+index 30b2db0..2c6a6bd 100644
+--- a/fs/f2fs/gc.h
++++ b/fs/f2fs/gc.h
+@@ -13,9 +13,9 @@
+ 						 * whether IO subsystem is idle
+ 						 * or not
+ 						 */
+-#define GC_THREAD_MIN_SLEEP_TIME	10000 /* milliseconds */
+-#define GC_THREAD_MAX_SLEEP_TIME	30000
+-#define GC_THREAD_NOGC_SLEEP_TIME	10000
++#define GC_THREAD_MIN_SLEEP_TIME	30000	/* milliseconds */
++#define GC_THREAD_MAX_SLEEP_TIME	60000
++#define GC_THREAD_NOGC_SLEEP_TIME	300000	/* wait 5 min */
+ #define LIMIT_INVALID_BLOCK	40 /* percentage over total user space */
+ #define LIMIT_FREE_BLOCK	40 /* percentage over invalid + free space */
+ 
+@@ -58,6 +58,9 @@ static inline block_t limit_free_user_blocks(struct f2fs_sb_info *sbi)
+ 
+ static inline long increase_sleep_time(long wait)
+ {
++	if (wait == GC_THREAD_NOGC_SLEEP_TIME)
++		return wait;
++
+ 	wait += GC_THREAD_MIN_SLEEP_TIME;
+ 	if (wait > GC_THREAD_MAX_SLEEP_TIME)
+ 		wait = GC_THREAD_MAX_SLEEP_TIME;
+@@ -66,6 +69,9 @@ static inline long increase_sleep_time(long wait)
+ 
+ static inline long decrease_sleep_time(long wait)
+ {
++	if (wait == GC_THREAD_NOGC_SLEEP_TIME)
++		wait = GC_THREAD_MAX_SLEEP_TIME;
++
+ 	wait -= GC_THREAD_MIN_SLEEP_TIME;
+ 	if (wait <= GC_THREAD_MIN_SLEEP_TIME)
+ 		wait = GC_THREAD_MIN_SLEEP_TIME;
+-- 
+1.8.2.1.422.gdcd8c09
+

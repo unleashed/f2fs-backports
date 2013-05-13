@@ -1,0 +1,187 @@
+From 60169ecc8ff43b399fba238d39a76e0dc523c5f4 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 24 Jan 2013 19:56:11 +0900
+Subject: [PATCH] f2fs: prevent checkpoint once any IO failure is detected
+
+This patch enhances the checkpoint routine to cope with IO errors.
+
+Basically f2fs detects IO errors from end_io_write, and the errors are able to
+be occurred during one of data, node, and meta page writes.
+
+In the previous code, when an IO error is occurred during writes, f2fs sets a
+flag, CP_ERROR_FLAG, in the raw ckeckpoint buffer which will be written to disk.
+Afterwards, write_checkpoint() will check the flag and remount f2fs as a
+read-only (ro) mode.
+
+However, even once f2fs is remounted as a ro mode, dirty checkpoint pages are
+freely able to be written to disk by flusher or kswapd in background.
+In such a case, after cold reboot, f2fs would restore the checkpoint data having
+CP_ERROR_FLAG, resulting in disabling write_checkpoint and remounting f2fs as
+a ro mode again.
+
+Therefore, let's prevent any checkpoint page (meta) writes once an IO error is
+occurred, and remount f2fs as a ro mode right away at that moment.
+
+Reported-by: Oliver Winker <oliver@oli1170.net>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 36 +++++++++++++++++++-----------------
+ fs/f2fs/f2fs.h       |  3 +--
+ fs/f2fs/segment.c    |  8 ++------
+ fs/f2fs/super.c      | 12 +++++++++---
+ 4 files changed, 31 insertions(+), 28 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index ff3c843..9c16271 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -72,22 +72,22 @@ static int f2fs_write_meta_page(struct page *page,
+ {
+ 	struct inode *inode = page->mapping->host;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+-	int err;
+ 
+-	wait_on_page_writeback(page);
+-
+-	err = write_meta_page(sbi, page, wbc);
+-	if (err) {
++	/* Should not write any meta pages, if any IO error was occurred */
++	if (wbc->for_reclaim ||
++			is_set_ckpt_flags(F2FS_CKPT(sbi), CP_ERROR_FLAG)) {
++		dec_page_count(sbi, F2FS_DIRTY_META);
+ 		wbc->pages_skipped++;
+ 		set_page_dirty(page);
++		return AOP_WRITEPAGE_ACTIVATE;
+ 	}
+ 
+-	dec_page_count(sbi, F2FS_DIRTY_META);
++	wait_on_page_writeback(page);
+ 
+-	/* In this case, we should not unlock this page */
+-	if (err != AOP_WRITEPAGE_ACTIVATE)
+-		unlock_page(page);
+-	return err;
++	write_meta_page(sbi, page);
++	dec_page_count(sbi, F2FS_DIRTY_META);
++	unlock_page(page);
++	return 0;
+ }
+ 
+ static int f2fs_write_meta_pages(struct address_space *mapping,
+@@ -138,7 +138,10 @@ long sync_meta_pages(struct f2fs_sb_info *sbi, enum page_type type,
+ 			BUG_ON(page->mapping != mapping);
+ 			BUG_ON(!PageDirty(page));
+ 			clear_page_dirty_for_io(page);
+-			f2fs_write_meta_page(page, &wbc);
++			if (f2fs_write_meta_page(page, &wbc)) {
++				unlock_page(page);
++				break;
++			}
+ 			if (nwritten++ >= nr_to_write)
+ 				break;
+ 		}
+@@ -717,13 +720,12 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, bool is_umount)
+ 	sbi->alloc_valid_block_count = 0;
+ 
+ 	/* Here, we only have one bio having CP pack */
+-	if (is_set_ckpt_flags(ckpt, CP_ERROR_FLAG))
+-		sbi->sb->s_flags |= MS_RDONLY;
+-	else
+-		sync_meta_pages(sbi, META_FLUSH, LONG_MAX);
++	sync_meta_pages(sbi, META_FLUSH, LONG_MAX);
+ 
+-	clear_prefree_segments(sbi);
+-	F2FS_RESET_SB_DIRT(sbi);
++	if (!is_set_ckpt_flags(ckpt, CP_ERROR_FLAG)) {
++		clear_prefree_segments(sbi);
++		F2FS_RESET_SB_DIRT(sbi);
++	}
+ }
+ 
+ /*
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index c8e2d75..f4f5097 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -929,8 +929,7 @@ void allocate_new_segments(struct f2fs_sb_info *);
+ struct page *get_sum_page(struct f2fs_sb_info *, unsigned int);
+ struct bio *f2fs_bio_alloc(struct block_device *, int);
+ void f2fs_submit_bio(struct f2fs_sb_info *, enum page_type, bool sync);
+-int write_meta_page(struct f2fs_sb_info *, struct page *,
+-					struct writeback_control *);
++void write_meta_page(struct f2fs_sb_info *, struct page *);
+ void write_node_page(struct f2fs_sb_info *, struct page *, unsigned int,
+ 					block_t, block_t *);
+ void write_data_page(struct inode *, struct page *, struct dnode_of_data*,
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 4b00990..7aa270f 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -600,6 +600,7 @@ static void f2fs_end_io_write(struct bio *bio, int err)
+ 			if (page->mapping)
+ 				set_bit(AS_EIO, &page->mapping->flags);
+ 			set_ckpt_flags(p->sbi->ckpt, CP_ERROR_FLAG);
++			p->sbi->sb->s_flags |= MS_RDONLY;
+ 		}
+ 		end_page_writeback(page);
+ 		dec_page_count(p->sbi, F2FS_WRITEBACK);
+@@ -815,15 +816,10 @@ static void do_write_page(struct f2fs_sb_info *sbi, struct page *page,
+ 	mutex_unlock(&curseg->curseg_mutex);
+ }
+ 
+-int write_meta_page(struct f2fs_sb_info *sbi, struct page *page,
+-			struct writeback_control *wbc)
++void write_meta_page(struct f2fs_sb_info *sbi, struct page *page)
+ {
+-	if (wbc->for_reclaim)
+-		return AOP_WRITEPAGE_ACTIVATE;
+-
+ 	set_page_writeback(page);
+ 	submit_write_page(sbi, page, page->index, META);
+-	return 0;
+ }
+ 
+ void write_node_page(struct f2fs_sb_info *sbi, struct page *page,
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 37fad04..117ca2a 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -387,10 +387,11 @@ static int sanity_check_raw_super(struct super_block *sb,
+ 	return 0;
+ }
+ 
+-static int sanity_check_ckpt(struct f2fs_super_block *raw_super,
+-				struct f2fs_checkpoint *ckpt)
++static int sanity_check_ckpt(struct f2fs_sb_info *sbi)
+ {
+ 	unsigned int total, fsmeta;
++	struct f2fs_super_block *raw_super = F2FS_RAW_SUPER(sbi);
++	struct f2fs_checkpoint *ckpt = F2FS_CKPT(sbi);
+ 
+ 	total = le32_to_cpu(raw_super->segment_count);
+ 	fsmeta = le32_to_cpu(raw_super->segment_count_ckpt);
+@@ -401,6 +402,11 @@ static int sanity_check_ckpt(struct f2fs_super_block *raw_super,
+ 
+ 	if (fsmeta >= total)
+ 		return 1;
++
++	if (is_set_ckpt_flags(ckpt, CP_ERROR_FLAG)) {
++		f2fs_msg(sbi->sb, KERN_ERR, "A bug case: need to run fsck");
++		return 1;
++	}
+ 	return 0;
+ }
+ 
+@@ -525,7 +531,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 
+ 	/* sanity checking of checkpoint */
+ 	err = -EINVAL;
+-	if (sanity_check_ckpt(raw_super, sbi->ckpt)) {
++	if (sanity_check_ckpt(sbi)) {
+ 		f2fs_msg(sb, KERN_ERR, "Invalid F2FS checkpoint");
+ 		goto free_cp;
+ 	}
+-- 
+1.8.2.1.422.gdcd8c09
+

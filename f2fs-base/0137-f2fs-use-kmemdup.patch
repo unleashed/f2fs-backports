@@ -1,0 +1,63 @@
+From f8e87f5fa2002fb33277d20ebc707f1d5b5b907b Mon Sep 17 00:00:00 2001
+From: Alexandru Gheorghiu <gheorghiuandru@gmail.com>
+Date: Thu, 28 Mar 2013 02:24:53 +0200
+Subject: [PATCH] f2fs: use kmemdup
+
+Use kmemdup instead of kzalloc and memcpy.
+
+Signed-off-by: Alexandru Gheorghiu <gheorghiuandru@gmail.com>
+Acked-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/node.c    | 12 +++++-------
+ fs/f2fs/segment.c |  3 +--
+ 2 files changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 0177f94..10cbee9 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -1666,19 +1666,17 @@ static int init_node_manager(struct f2fs_sb_info *sbi)
+ 	spin_lock_init(&nm_i->free_nid_list_lock);
+ 	rwlock_init(&nm_i->nat_tree_lock);
+ 
+-	nm_i->bitmap_size = __bitmap_size(sbi, NAT_BITMAP);
+ 	nm_i->init_scan_nid = le32_to_cpu(sbi->ckpt->next_free_nid);
+ 	nm_i->next_scan_nid = le32_to_cpu(sbi->ckpt->next_free_nid);
+-
+-	nm_i->nat_bitmap = kzalloc(nm_i->bitmap_size, GFP_KERNEL);
+-	if (!nm_i->nat_bitmap)
+-		return -ENOMEM;
++	nm_i->bitmap_size = __bitmap_size(sbi, NAT_BITMAP);
+ 	version_bitmap = __bitmap_ptr(sbi, NAT_BITMAP);
+ 	if (!version_bitmap)
+ 		return -EFAULT;
+ 
+-	/* copy version bitmap */
+-	memcpy(nm_i->nat_bitmap, version_bitmap, nm_i->bitmap_size);
++	nm_i->nat_bitmap = kmemdup(version_bitmap, nm_i->bitmap_size,
++					GFP_KERNEL);
++	if (!nm_i->nat_bitmap)
++		return -ENOMEM;
+ 	return 0;
+ }
+ 
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 777f17e..1758149 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -1403,10 +1403,9 @@ static int build_sit_info(struct f2fs_sb_info *sbi)
+ 	bitmap_size = __bitmap_size(sbi, SIT_BITMAP);
+ 	src_bitmap = __bitmap_ptr(sbi, SIT_BITMAP);
+ 
+-	dst_bitmap = kzalloc(bitmap_size, GFP_KERNEL);
++	dst_bitmap = kmemdup(src_bitmap, bitmap_size, GFP_KERNEL);
+ 	if (!dst_bitmap)
+ 		return -ENOMEM;
+-	memcpy(dst_bitmap, src_bitmap, bitmap_size);
+ 
+ 	/* init SIT information */
+ 	sit_i->s_ops = &default_salloc_ops;
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,62 @@
+From 0917fdc42730b0c5ae58ab962065a40d51afb865 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 12 Dec 2012 19:45:49 +0900
+Subject: [PATCH] f2fs: fix wrong calculation on f_files in statfs
+
+In f2fs_statfs(), f_files should be the total number of available inodes
+instead of the currently allocated inodes.
+So, this patch should resolve the reported bug below.
+
+Note that, showing 10% usage is not a bug, since f2fs reveals whole volume size
+as much as possible and shows the space overhead as *used*.
+This policy is fair enough with respect to other file systems.
+
+<Reported Bug>
+(loop0 is backed by 1GiB file)
+
+$ mkfs.f2fs /dev/loop0
+
+F2FS-tools: Ver: 1.1.0 (2012-12-11)
+Info: sector size = 512
+Info: total sectors = 2097152 (in 512bytes)
+Info: zone aligned segment0 blkaddr: 512
+Info: format successful
+
+$ mount /dev/loop0 mnt/
+
+$ df mnt/
+Filesystem     1K-blocks  Used Available Use% Mounted on
+/dev/loop0       1046528 98312    929784  10%
+/home/zeta/linux-devel/mtd-bench/mnt
+
+$ df mnt/ -i
+Filesystem     Inodes   IUsed  IFree IUse% Mounted on
+/dev/loop0       1 -465918 465919     - /home/zeta/linux-devel/mtd-bench/mnt
+
+Notice IUsed is negative. Also, 10% usage on a fresh f2fs seems too
+much to be correct.
+
+Reported-and-Tested-by: Ezequiel Garcia <elezegarcia@gmail.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/super.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 1386732..f4d9e03 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -148,8 +148,8 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 	buf->f_bfree = buf->f_blocks - valid_user_blocks(sbi) - ovp_count;
+ 	buf->f_bavail = user_block_count - valid_user_blocks(sbi);
+ 
+-	buf->f_files = valid_inode_count(sbi);
+-	buf->f_ffree = sbi->total_node_count - valid_node_count(sbi);
++	buf->f_files = sbi->total_node_count;
++	buf->f_ffree = sbi->total_node_count - valid_inode_count(sbi);
+ 
+ 	buf->f_namelen = F2FS_MAX_NAME_LEN;
+ 	buf->f_fsid.val[0] = (u32)id;
+-- 
+1.8.2.1.422.gdcd8c09
+

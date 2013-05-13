@@ -1,0 +1,33 @@
+From 8f7c162fcd6635ec57919182045b7601888310a0 Mon Sep 17 00:00:00 2001
+From: Wei Yongjun <yongjun_wei@trendmicro.com.cn>
+Date: Fri, 12 Apr 2013 10:23:18 +0800
+Subject: [PATCH] f2fs: fix error return code in f2fs_fill_super()
+
+Fix to return a negative error code from the error handling
+case instead of 0, as returned elsewhere in this function.
+Introduce by commit c0d39e(f2fs: fix return values from validate superblock)
+
+Signed-off-by: Wei Yongjun <yongjun_wei@trendmicro.com.cn>
+Acked-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/super.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 1b16cea..35b13b9 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -534,7 +534,8 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 	set_opt(sbi, POSIX_ACL);
+ #endif
+ 	/* parse mount options */
+-	if (parse_options(sb, sbi, (char *)data))
++	err = parse_options(sb, sbi, (char *)data);
++	if (err)
+ 		goto free_sb_buf;
+ 
+ 	sb->s_maxbytes = max_file_size(le32_to_cpu(raw_super->log_blocksize));
+-- 
+1.8.2.1.422.gdcd8c09
+

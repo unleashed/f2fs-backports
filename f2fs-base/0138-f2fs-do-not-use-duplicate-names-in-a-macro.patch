@@ -1,0 +1,41 @@
+From f53233903156aa227e9143d4161b7a85c7e4903e Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Sun, 31 Mar 2013 12:30:04 +0900
+Subject: [PATCH] f2fs: do not use duplicate names in a macro
+
+A macro should not use duplicate parameter names.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.h | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/segment.h b/fs/f2fs/segment.h
+index e399bd4..c0d7740 100644
+--- a/fs/f2fs/segment.h
++++ b/fs/f2fs/segment.h
+@@ -23,13 +23,13 @@
+ 	((t == CURSEG_HOT_NODE) || (t == CURSEG_COLD_NODE) ||		\
+ 	(t == CURSEG_WARM_NODE))
+ 
+-#define IS_CURSEG(sbi, segno)						\
+-	((segno == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
+-	 (segno == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
+-	 (segno == CURSEG_I(sbi, CURSEG_COLD_DATA)->segno) ||	\
+-	 (segno == CURSEG_I(sbi, CURSEG_HOT_NODE)->segno) ||	\
+-	 (segno == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno) ||	\
+-	 (segno == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno))
++#define IS_CURSEG(sbi, seg)						\
++	((seg == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
++	 (seg == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
++	 (seg == CURSEG_I(sbi, CURSEG_COLD_DATA)->segno) ||	\
++	 (seg == CURSEG_I(sbi, CURSEG_HOT_NODE)->segno) ||	\
++	 (seg == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno) ||	\
++	 (seg == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno))
+ 
+ #define IS_CURSEC(sbi, secno)						\
+ 	((secno == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno /		\
+-- 
+1.8.2.1.422.gdcd8c09
+

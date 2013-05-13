@@ -1,0 +1,181 @@
+From f7be897b3e544ffac1bb518f545b992115d98404 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 21 Mar 2013 15:21:57 +0900
+Subject: [PATCH] f2fs: fix to give correct parent inode number for roll
+ forward
+
+When we recover fsync'ed data after power-off-recovery, we should guarantee
+that any parent inode number should be correct for each direct inode blocks.
+
+So, let's make the following rules.
+
+- The fsync should do checkpoint to all the inodes that were experienced hard
+links.
+
+- So, the only normal files can be recovered by roll-forward.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h  |  2 +-
+ fs/f2fs/file.c  | 22 ++--------------------
+ fs/f2fs/namei.c | 14 ++++++++++----
+ fs/f2fs/node.h  | 15 +++++++++++++++
+ 4 files changed, 28 insertions(+), 25 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 380e2b3..77e2eb0 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -148,6 +148,7 @@ struct extent_info {
+  * i_advise uses FADVISE_XXX_BIT. We can add additional hints later.
+  */
+ #define FADVISE_COLD_BIT	0x01
++#define FADVISE_CP_BIT		0x02
+ 
+ struct f2fs_inode_info {
+ 	struct inode vfs_inode;		/* serve a vfs inode */
+@@ -825,7 +826,6 @@ static inline int f2fs_clear_bit(unsigned int nr, char *addr)
+ /* used for f2fs_inode_info->flags */
+ enum {
+ 	FI_NEW_INODE,		/* indicate newly allocated inode */
+-	FI_NEED_CP,		/* need to do checkpoint during fsync */
+ 	FI_INC_LINK,		/* need to increment i_nlink */
+ 	FI_ACL_MODE,		/* indicate acl mode */
+ 	FI_NO_ALLOC,		/* should not allocate any blocks */
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 1a88b29..ac8cbb2 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -103,23 +103,6 @@ static const struct vm_operations_struct f2fs_file_vm_ops = {
+ 	.remap_pages	= generic_file_remap_pages,
+ };
+ 
+-static int need_to_sync_dir(struct f2fs_sb_info *sbi, struct inode *inode)
+-{
+-	struct dentry *dentry;
+-	nid_t pino;
+-
+-	inode = igrab(inode);
+-	dentry = d_find_any_alias(inode);
+-	if (!dentry) {
+-		iput(inode);
+-		return 0;
+-	}
+-	pino = dentry->d_parent->d_inode->i_ino;
+-	dput(dentry);
+-	iput(inode);
+-	return !is_checkpointed_node(sbi, pino);
+-}
+-
+ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ {
+ 	struct inode *inode = file->f_mapping->host;
+@@ -149,17 +132,16 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 
+ 	if (!S_ISREG(inode->i_mode) || inode->i_nlink != 1)
+ 		need_cp = true;
+-	else if (is_inode_flag_set(F2FS_I(inode), FI_NEED_CP))
++	else if (is_cp_file(inode))
+ 		need_cp = true;
+ 	else if (!space_for_roll_forward(sbi))
+ 		need_cp = true;
+-	else if (need_to_sync_dir(sbi, inode))
++	else if (!is_checkpointed_node(sbi, F2FS_I(inode)->i_pino))
+ 		need_cp = true;
+ 
+ 	if (need_cp) {
+ 		/* all the dirty node pages should be flushed for POR */
+ 		ret = f2fs_sync_fs(inode->i_sb, 1);
+-		clear_inode_flag(F2FS_I(inode), FI_NEED_CP);
+ 	} else {
+ 		/* if there is no written node page, write its inode page */
+ 		while (!sync_node_pages(sbi, inode->i_ino, &wbc)) {
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index d4a171b..7c6e219 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -15,6 +15,7 @@
+ #include <linux/ctype.h>
+ 
+ #include "f2fs.h"
++#include "node.h"
+ #include "xattr.h"
+ #include "acl.h"
+ 
+@@ -99,7 +100,7 @@ static int is_multimedia_file(const unsigned char *s, const char *sub)
+ /*
+  * Set multimedia files as cold files for hot/cold data separation
+  */
+-static inline void set_cold_file(struct f2fs_sb_info *sbi, struct inode *inode,
++static inline void set_cold_files(struct f2fs_sb_info *sbi, struct inode *inode,
+ 		const unsigned char *name)
+ {
+ 	int i;
+@@ -108,7 +109,7 @@ static inline void set_cold_file(struct f2fs_sb_info *sbi, struct inode *inode,
+ 	int count = le32_to_cpu(sbi->raw_super->extension_count);
+ 	for (i = 0; i < count; i++) {
+ 		if (!is_multimedia_file(name, extlist[i])) {
+-			F2FS_I(inode)->i_advise |= FADVISE_COLD_BIT;
++			set_cold_file(inode);
+ 			break;
+ 		}
+ 	}
+@@ -130,7 +131,7 @@ static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
+ 		return PTR_ERR(inode);
+ 
+ 	if (!test_opt(sbi, DISABLE_EXT_IDENTIFY))
+-		set_cold_file(sbi, inode, dentry->d_name.name);
++		set_cold_files(sbi, inode, dentry->d_name.name);
+ 
+ 	inode->i_op = &f2fs_file_inode_operations;
+ 	inode->i_fop = &f2fs_file_operations;
+@@ -173,6 +174,12 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
+ 	if (err)
+ 		goto out;
+ 
++	/*
++	 * This file should be checkpointed during fsync.
++	 * We lost i_pino from now on.
++	 */
++	set_cp_file(inode);
++
+ 	d_instantiate(dentry, inode);
+ 	return 0;
+ out:
+@@ -425,7 +432,6 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 	}
+ 
+ 	old_inode->i_ctime = CURRENT_TIME;
+-	set_inode_flag(F2FS_I(old_inode), FI_NEED_CP);
+ 	mark_inode_dirty(old_inode);
+ 
+ 	f2fs_delete_entry(old_entry, old_page, NULL);
+diff --git a/fs/f2fs/node.h b/fs/f2fs/node.h
+index afdb130..d009cdf 100644
+--- a/fs/f2fs/node.h
++++ b/fs/f2fs/node.h
+@@ -277,6 +277,21 @@ static inline int is_cold_file(struct inode *inode)
+ 	return F2FS_I(inode)->i_advise & FADVISE_COLD_BIT;
+ }
+ 
++static inline void set_cold_file(struct inode *inode)
++{
++	F2FS_I(inode)->i_advise |= FADVISE_COLD_BIT;
++}
++
++static inline int is_cp_file(struct inode *inode)
++{
++	return F2FS_I(inode)->i_advise & FADVISE_CP_BIT;
++}
++
++static inline void set_cp_file(struct inode *inode)
++{
++	F2FS_I(inode)->i_advise |= FADVISE_CP_BIT;
++}
++
+ static inline int is_cold_data(struct page *page)
+ {
+ 	return PageChecked(page);
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,103 @@
+From 7c54431325e61fecaad93387448f71dfdcc4d764 Mon Sep 17 00:00:00 2001
+From: majianpeng <majianpeng@gmail.com>
+Date: Fri, 1 Feb 2013 19:07:03 +0800
+Subject: [PATCH] f2fs: when check superblock failed, try to check another
+ superblock
+
+In f2fs, there are two superblocks. So when the first superblock was
+invalidate, it should try to check another.
+
+By Jaegeuk Kim:
+ o Remove a white space for coding style
+ o Clean up for code readability
+ o Fix a typo
+
+Signed-off-by: Jianpeng Ma <majianpeng@gmail.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/super.c | 47 +++++++++++++++++++++++++++++++----------------
+ 1 file changed, 31 insertions(+), 16 deletions(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 1d7fe11..ddb665f 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -387,7 +387,7 @@ static int sanity_check_raw_super(struct super_block *sb,
+ 	/* Currently, support only 4KB page cache size */
+ 	if (F2FS_BLKSIZE != PAGE_CACHE_SIZE) {
+ 		f2fs_msg(sb, KERN_INFO,
+-			"Invalid page_cache_size (%u), supports only 4KB\n",
++			"Invalid page_cache_size (%lu), supports only 4KB\n",
+ 			PAGE_CACHE_SIZE);
+ 		return 1;
+ 	}
+@@ -462,6 +462,32 @@ static void init_sb_info(struct f2fs_sb_info *sbi)
+ 		atomic_set(&sbi->nr_pages[i], 0);
+ }
+ 
++static int validate_superblock(struct super_block *sb,
++		struct f2fs_super_block **raw_super,
++		struct buffer_head **raw_super_buf, sector_t block)
++{
++	const char *super = (block == 0 ? "first" : "second");
++
++	/* read f2fs raw super block */
++	*raw_super_buf = sb_bread(sb, block);
++	if (!*raw_super_buf) {
++		f2fs_msg(sb, KERN_ERR, "unable to read %s superblock",
++				super);
++		return 1;
++	}
++
++	*raw_super = (struct f2fs_super_block *)
++		((char *)(*raw_super_buf)->b_data + F2FS_SUPER_OFFSET);
++
++	/* sanity checking of raw super */
++	if (!sanity_check_raw_super(sb, *raw_super))
++		return 0;
++
++	f2fs_msg(sb, KERN_ERR, "Can't find a valid F2FS filesystem "
++				"in %s superblock", super);
++	return 1;
++}
++
+ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ {
+ 	struct f2fs_sb_info *sbi;
+@@ -482,16 +508,11 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 		goto free_sbi;
+ 	}
+ 
+-	/* read f2fs raw super block */
+-	raw_super_buf = sb_bread(sb, 0);
+-	if (!raw_super_buf) {
+-		err = -EIO;
+-		f2fs_msg(sb, KERN_ERR, "unable to read superblock");
+-		goto free_sbi;
++	if (validate_superblock(sb, &raw_super, &raw_super_buf, 0)) {
++		brelse(raw_super_buf);
++		if (validate_superblock(sb, &raw_super, &raw_super_buf, 1))
++			goto free_sb_buf;
+ 	}
+-	raw_super = (struct f2fs_super_block *)
+-			((char *)raw_super_buf->b_data + F2FS_SUPER_OFFSET);
+-
+ 	/* init some FS parameters */
+ 	sbi->active_logs = NR_CURSEG_TYPE;
+ 
+@@ -507,12 +528,6 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+ 	if (parse_options(sb, sbi, (char *)data))
+ 		goto free_sb_buf;
+ 
+-	/* sanity checking of raw super */
+-	if (sanity_check_raw_super(sb, raw_super)) {
+-		f2fs_msg(sb, KERN_ERR, "Can't find a valid F2FS filesystem");
+-		goto free_sb_buf;
+-	}
+-
+ 	sb->s_maxbytes = max_file_size(le32_to_cpu(raw_super->log_blocksize));
+ 	sb->s_max_links = F2FS_LINK_MAX;
+ 	get_random_bytes(&sbi->s_next_generation, sizeof(u32));
+-- 
+1.8.2.1.422.gdcd8c09
+

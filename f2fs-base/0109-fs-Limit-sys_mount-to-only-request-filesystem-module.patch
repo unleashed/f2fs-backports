@@ -1,0 +1,84 @@
+From b0ff09884863f0ebfa861cc2606703cb822f90e9 Mon Sep 17 00:00:00 2001
+From: "Eric W. Biederman" <ebiederm@xmission.com>
+Date: Sat, 2 Mar 2013 19:39:14 -0800
+Subject: [PATCH] fs: Limit sys_mount to only request filesystem modules.
+
+Modify the request_module to prefix the file system type with "fs-"
+and add aliases to all of the filesystems that can be built as modules
+to match.
+
+A common practice is to build all of the kernel code and leave code
+that is not commonly needed as modules, with the result that many
+users are exposed to any bug anywhere in the kernel.
+
+Looking for filesystems with a fs- prefix limits the pool of possible
+modules that can be loaded by mount to just filesystems trivially
+making things safer with no real cost.
+
+Using aliases means user space can control the policy of which
+filesystem modules are auto-loaded by editing /etc/modprobe.d/*.conf
+with blacklist and alias directives.  Allowing simple, safe,
+well understood work-arounds to known problematic software.
+
+This also addresses a rare but unfortunate problem where the filesystem
+name is not the same as it's module name and module auto-loading
+would not work.  While writing this patch I saw a handful of such
+cases.  The most significant being autofs that lives in the module
+autofs4.
+
+This is relevant to user namespaces because we can reach the request
+module in get_fs_type() without having any special permissions, and
+people get uncomfortable when a user specified string (in this case
+the filesystem type) goes all of the way to request_module.
+
+After having looked at this issue I don't think there is any
+particular reason to perform any filtering or permission checks beyond
+making it clear in the module request that we want a filesystem
+module.  The common pattern in the kernel is to call request_module()
+without regards to the users permissions.  In general all a filesystem
+module does once loaded is call register_filesystem() and go to sleep.
+Which means there is not much attack surface exposed by loading a
+filesytem module unless the filesystem is mounted.  In a user
+namespace filesystems are not mounted unless .fs_flags = FS_USERNS_MOUNT,
+which most filesystems do not set today.
+
+[alex: trim down to f2fs and linux/fs.h]
+
+Acked-by: Serge Hallyn <serge.hallyn@canonical.com>
+Acked-by: Kees Cook <keescook@chromium.org>
+Reported-by: Kees Cook <keescook@google.com>
+Signed-off-by: "Eric W. Biederman" <ebiederm@xmission.com>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/super.c    | 1 +
+ include/linux/fs.h | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 8c11764..fea6e58 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -687,6 +687,7 @@ static struct file_system_type f2fs_fs_type = {
+ 	.kill_sb	= kill_block_super,
+ 	.fs_flags	= FS_REQUIRES_DEV,
+ };
++MODULE_ALIAS_FS("f2fs");
+ 
+ static int __init init_inodecache(void)
+ {
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 9c7e5c0..c77b13f 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -1875,6 +1875,8 @@ struct file_system_type {
+ 	struct lock_class_key i_mutex_dir_key;
+ };
+ 
++#define MODULE_ALIAS_FS(NAME) MODULE_ALIAS("fs-" NAME)
++
+ extern struct dentry *mount_ns(struct file_system_type *fs_type, int flags,
+ 	void *data, int (*fill_super)(struct super_block *, void *, int));
+ extern struct dentry *mount_bdev(struct file_system_type *fs_type,
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,35 @@
+From 64672f45e2333f8befc4f470f569e803dc4a9bb1 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Wed, 20 Mar 2013 09:33:23 -0400
+Subject: [PATCH] f2fs: use mnt_want_write_file() in ioctl
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+---
+ fs/f2fs/file.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 958a46d..db62628 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -590,7 +590,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 	{
+ 		unsigned int oldflags;
+ 
+-		ret = mnt_want_write(filp->f_path.mnt);
++		ret = mnt_want_write_file(filp);
+ 		if (ret)
+ 			return ret;
+ 
+@@ -627,7 +627,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 		inode->i_ctime = CURRENT_TIME;
+ 		mark_inode_dirty(inode);
+ out:
+-		mnt_drop_write(filp->f_path.mnt);
++		mnt_drop_write_file(filp);
+ 		return ret;
+ 	}
+ 	default:
+-- 
+1.8.2.1.422.gdcd8c09
+

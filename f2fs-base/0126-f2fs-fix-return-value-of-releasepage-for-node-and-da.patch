@@ -1,0 +1,74 @@
+From 465b6e1175cee660bcaae68dc600a44b4513bc91 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 14 Mar 2013 09:24:32 +0900
+Subject: [PATCH] f2fs: fix return value of releasepage for node and data
+
+If the return value of releasepage is equal to zero, the page cannot be reclaimed.
+Instead, we should return 1 in order to reclaim clean pages.
+
+Reviewed-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c |  2 +-
+ fs/f2fs/node.c | 11 +----------
+ 2 files changed, 2 insertions(+), 11 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 3549ab4..42c8410 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -684,7 +684,7 @@ static void f2fs_invalidate_data_page(struct page *page, unsigned long offset)
+ static int f2fs_release_data_page(struct page *page, gfp_t wait)
+ {
+ 	ClearPagePrivate(page);
+-	return 0;
++	return 1;
+ }
+ 
+ static int f2fs_set_data_page_dirty(struct page *page)
+diff --git a/fs/f2fs/node.c b/fs/f2fs/node.c
+index 94951d9..bf9172b 100644
+--- a/fs/f2fs/node.c
++++ b/fs/f2fs/node.c
+@@ -933,7 +933,6 @@ struct page *get_node_page_ra(struct page *parent, int start)
+ 	if (!nid)
+ 		return ERR_PTR(-ENOENT);
+ 
+-repeat:
+ 	page = grab_cache_page(mapping, nid);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+@@ -961,12 +960,6 @@ page_hit:
+ 		f2fs_put_page(page, 1);
+ 		return ERR_PTR(-EIO);
+ 	}
+-
+-	/* Has the page been truncated? */
+-	if (page->mapping != mapping) {
+-		f2fs_put_page(page, 1);
+-		goto repeat;
+-	}
+ 	mark_page_accessed(page);
+ 	return page;
+ }
+@@ -1189,7 +1182,7 @@ static void f2fs_invalidate_node_page(struct page *page, unsigned long offset)
+ static int f2fs_release_node_page(struct page *page, gfp_t wait)
+ {
+ 	ClearPagePrivate(page);
+-	return 0;
++	return 1;
+ }
+ 
+ /*
+@@ -1630,8 +1623,6 @@ flush_now:
+ 			write_lock(&nm_i->nat_tree_lock);
+ 			__del_from_nat_cache(nm_i, ne);
+ 			write_unlock(&nm_i->nat_tree_lock);
+-
+-			/* We can reuse this freed nid at this point */
+ 			add_free_nid(NM_I(sbi), nid);
+ 		} else {
+ 			write_lock(&nm_i->nat_tree_lock);
+-- 
+1.8.2.1.422.gdcd8c09
+

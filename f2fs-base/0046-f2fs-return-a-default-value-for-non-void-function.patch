@@ -1,0 +1,54 @@
+From 007a9a29f79d58d519a499e268c81aa6a77b5fad Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 21 Dec 2012 11:47:05 +0900
+Subject: [PATCH] f2fs: return a default value for non-void function
+
+This patch resolves a build warning reported by kbuild test robot.
+
+"
+fs/f2fs/segment.c: In function '__get_segment_type':
+fs/f2fs/segment.c:806:1: warning: control reaches end of non-void
+function [-Wreturn-type]
+"
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/segment.c | 7 +++----
+ fs/f2fs/super.c   | 2 +-
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index ca7b5ff..fe2cc0b 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -791,11 +791,10 @@ static int __get_segment_type(struct page *page, enum page_type p_type)
+ 		return __get_segment_type_2(page, p_type);
+ 	case 4:
+ 		return __get_segment_type_4(page, p_type);
+-	case 6:
+-		return __get_segment_type_6(page, p_type);
+-	default:
+-		BUG();
+ 	}
++	/* NR_CURSEG_TYPE(6) logs by default */
++	BUG_ON(sbi->active_logs != NR_CURSEG_TYPE);
++	return __get_segment_type_6(page, p_type);
+ }
+ 
+ static void do_write_page(struct f2fs_sb_info *sbi, struct page *page,
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 50240d2..cf0ffb8 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -302,7 +302,7 @@ static int parse_options(struct f2fs_sb_info *sbi, char *options)
+ 		case Opt_active_logs:
+ 			if (args->from && match_int(args, &arg))
+ 				return -EINVAL;
+-			if (arg != 2 && arg != 4 && arg != 6)
++			if (arg != 2 && arg != 4 && arg != NR_CURSEG_TYPE)
+ 				return -EINVAL;
+ 			sbi->active_logs = arg;
+ 			break;
+-- 
+1.8.2.1.422.gdcd8c09
+

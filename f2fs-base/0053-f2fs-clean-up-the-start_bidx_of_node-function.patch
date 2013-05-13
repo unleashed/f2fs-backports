@@ -1,0 +1,59 @@
+From b3626f74d7aa9a53da118100f276610abe93a9a9 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 26 Dec 2012 12:03:22 +0900
+Subject: [PATCH] f2fs: clean up the start_bidx_of_node function
+
+This patch also resolves the following warning reported by kbuild test robot.
+
+fs/f2fs/gc.c: In function 'start_bidx_of_node':
+fs/f2fs/gc.c:453:21: warning: 'bidx' may be used uninitialized in this function
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 22 ++++++++--------------
+ 1 file changed, 8 insertions(+), 14 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 644aa38..eda8230 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -430,28 +430,22 @@ next_step:
+  */
+ block_t start_bidx_of_node(unsigned int node_ofs)
+ {
+-	block_t start_bidx;
+-	unsigned int bidx, indirect_blks;
+-	int dec;
++	unsigned int indirect_blks = 2 * NIDS_PER_BLOCK + 4;
++	unsigned int bidx;
+ 
+-	indirect_blks = 2 * NIDS_PER_BLOCK + 4;
++	if (node_ofs == 0)
++		return 0;
+ 
+-	start_bidx = 1;
+-	if (node_ofs == 0) {
+-		start_bidx = 0;
+-	} else if (node_ofs <= 2) {
++	if (node_ofs <= 2) {
+ 		bidx = node_ofs - 1;
+ 	} else if (node_ofs <= indirect_blks) {
+-		dec = (node_ofs - 4) / (NIDS_PER_BLOCK + 1);
++		int dec = (node_ofs - 4) / (NIDS_PER_BLOCK + 1);
+ 		bidx = node_ofs - 2 - dec;
+ 	} else {
+-		dec = (node_ofs - indirect_blks - 3) / (NIDS_PER_BLOCK + 1);
++		int dec = (node_ofs - indirect_blks - 3) / (NIDS_PER_BLOCK + 1);
+ 		bidx = node_ofs - 5 - dec;
+ 	}
+-
+-	if (start_bidx)
+-		start_bidx = bidx * ADDRS_PER_BLOCK + ADDRS_PER_INODE;
+-	return start_bidx;
++	return bidx * ADDRS_PER_BLOCK + ADDRS_PER_INODE;
+ }
+ 
+ static int check_dnode(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
+-- 
+1.8.2.1.422.gdcd8c09
+

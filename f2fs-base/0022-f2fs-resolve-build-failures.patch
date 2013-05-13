@@ -1,0 +1,189 @@
+From 3a6044442bbd8456caf50f829f01c08855876b49 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 30 Nov 2012 17:32:08 +0900
+Subject: [PATCH] f2fs: resolve build failures
+
+There exist two build failures reported by Randy Dunlap as follows.
+
+(on i386)
+ a. (config-r8857)
+	ERROR: "f2fs_xattr_advise_handler" [fs/f2fs/f2fs.ko] undefined!
+
+Key configs in (config-r8857) are as follows.
+ CONFIG_F2FS_FS=m
+ # CONFIG_F2FS_STAT_FS is not set
+ CONFIG_F2FS_FS_XATTR=y
+ # CONFIG_F2FS_FS_POSIX_ACL is not set
+
+The error was occurred due to the function location that we made a mistake.
+Recently we added a new functionality for users to indicate cold files
+explicitly through xattr operations (i.e., f2fs_xattr_advise_handler).
+
+This handler should have been added in xattr.c instead of acl.c in order
+to avoid an undefined operation like in this case where XATTR is set and
+ACL is not set.
+
+ b. (config-r8855)
+	fs/f2fs/file.c: In function 'f2fs_vm_page_mkwrite':
+	fs/f2fs/file.c:97:2: error: implicit declaration of function
+	'block_page_mkwrite_return'
+
+Key config in (config-r8855) is CONFIG_BLOCK.
+
+Obviously, f2fs works on top of the block device so that we should consider
+carefully a sort of config dependencies.
+
+The reason why this error was occurred was that f2fs_vm_page_mkwrite() calls
+block_page_mkwrite_return() which is enalbed only if CONFIG_BLOCK is set.
+
+Reported-by: Randy Dunlap <rdunlap@xenotime.net>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Acked-by: Randy Dunlap <rdunlap@xenotime.net>
+---
+ fs/f2fs/Kconfig |  1 +
+ fs/f2fs/acl.c   | 51 ---------------------------------------------------
+ fs/f2fs/xattr.c | 51 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 52 insertions(+), 51 deletions(-)
+
+diff --git a/fs/f2fs/Kconfig b/fs/f2fs/Kconfig
+index 37a6b8e..fd27e7e 100644
+--- a/fs/f2fs/Kconfig
++++ b/fs/f2fs/Kconfig
+@@ -1,5 +1,6 @@
+ config F2FS_FS
+ 	tristate "F2FS filesystem support (EXPERIMENTAL)"
++	depends on BLOCK
+ 	help
+ 	  F2FS is based on Log-structured File System (LFS), which supports
+ 	  versatile "flash-friendly" features. The design has been focused on
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index 1ac9a4b..fed74d1 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -412,54 +412,3 @@ const struct xattr_handler f2fs_xattr_acl_access_handler = {
+ 	.get = f2fs_xattr_get_acl,
+ 	.set = f2fs_xattr_set_acl,
+ };
+-
+-static size_t f2fs_xattr_advise_list(struct dentry *dentry, char *list,
+-		size_t list_size, const char *name, size_t name_len, int type)
+-{
+-	const char *xname = F2FS_SYSTEM_ADVISE_PREFIX;
+-	size_t size;
+-
+-	if (type != F2FS_XATTR_INDEX_ADVISE)
+-		return 0;
+-
+-	size = strlen(xname) + 1;
+-	if (list && size <= list_size)
+-		memcpy(list, xname, size);
+-	return size;
+-}
+-
+-static int f2fs_xattr_advise_get(struct dentry *dentry, const char *name,
+-		void *buffer, size_t size, int type)
+-{
+-	struct inode *inode = dentry->d_inode;
+-
+-	if (strcmp(name, "") != 0)
+-		return -EINVAL;
+-
+-	*((char *)buffer) = F2FS_I(inode)->i_advise;
+-	return sizeof(char);
+-}
+-
+-static int f2fs_xattr_advise_set(struct dentry *dentry, const char *name,
+-		const void *value, size_t size, int flags, int type)
+-{
+-	struct inode *inode = dentry->d_inode;
+-
+-	if (strcmp(name, "") != 0)
+-		return -EINVAL;
+-	if (!inode_owner_or_capable(inode))
+-		return -EPERM;
+-	if (value == NULL)
+-		return -EINVAL;
+-
+-	F2FS_I(inode)->i_advise |= *(char *)value;
+-	return 0;
+-}
+-
+-const struct xattr_handler f2fs_xattr_advise_handler = {
+-	.prefix = F2FS_SYSTEM_ADVISE_PREFIX,
+-	.flags	= F2FS_XATTR_INDEX_ADVISE,
+-	.list   = f2fs_xattr_advise_list,
+-	.get    = f2fs_xattr_advise_get,
+-	.set    = f2fs_xattr_advise_set,
+-};
+diff --git a/fs/f2fs/xattr.c b/fs/f2fs/xattr.c
+index 5324d1e..7d52e8d 100644
+--- a/fs/f2fs/xattr.c
++++ b/fs/f2fs/xattr.c
+@@ -102,6 +102,49 @@ static int f2fs_xattr_generic_set(struct dentry *dentry, const char *name,
+ 	return f2fs_setxattr(dentry->d_inode, type, name, value, size);
+ }
+ 
++static size_t f2fs_xattr_advise_list(struct dentry *dentry, char *list,
++		size_t list_size, const char *name, size_t name_len, int type)
++{
++	const char *xname = F2FS_SYSTEM_ADVISE_PREFIX;
++	size_t size;
++
++	if (type != F2FS_XATTR_INDEX_ADVISE)
++		return 0;
++
++	size = strlen(xname) + 1;
++	if (list && size <= list_size)
++		memcpy(list, xname, size);
++	return size;
++}
++
++static int f2fs_xattr_advise_get(struct dentry *dentry, const char *name,
++		void *buffer, size_t size, int type)
++{
++	struct inode *inode = dentry->d_inode;
++
++	if (strcmp(name, "") != 0)
++		return -EINVAL;
++
++	*((char *)buffer) = F2FS_I(inode)->i_advise;
++	return sizeof(char);
++}
++
++static int f2fs_xattr_advise_set(struct dentry *dentry, const char *name,
++		const void *value, size_t size, int flags, int type)
++{
++	struct inode *inode = dentry->d_inode;
++
++	if (strcmp(name, "") != 0)
++		return -EINVAL;
++	if (!inode_owner_or_capable(inode))
++		return -EPERM;
++	if (value == NULL)
++		return -EINVAL;
++
++	F2FS_I(inode)->i_advise |= *(char *)value;
++	return 0;
++}
++
+ const struct xattr_handler f2fs_xattr_user_handler = {
+ 	.prefix	= XATTR_USER_PREFIX,
+ 	.flags	= F2FS_XATTR_INDEX_USER,
+@@ -118,6 +161,14 @@ const struct xattr_handler f2fs_xattr_trusted_handler = {
+ 	.set	= f2fs_xattr_generic_set,
+ };
+ 
++const struct xattr_handler f2fs_xattr_advise_handler = {
++	.prefix = F2FS_SYSTEM_ADVISE_PREFIX,
++	.flags	= F2FS_XATTR_INDEX_ADVISE,
++	.list   = f2fs_xattr_advise_list,
++	.get    = f2fs_xattr_advise_get,
++	.set    = f2fs_xattr_advise_set,
++};
++
+ static const struct xattr_handler *f2fs_xattr_handler_map[] = {
+ 	[F2FS_XATTR_INDEX_USER] = &f2fs_xattr_user_handler,
+ #ifdef CONFIG_F2FS_FS_POSIX_ACL
+-- 
+1.8.2.1.422.gdcd8c09
+

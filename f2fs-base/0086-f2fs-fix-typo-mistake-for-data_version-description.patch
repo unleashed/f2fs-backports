@@ -1,0 +1,32 @@
+From e3ec1c97be344ecbf8985b9b4cd39d476e85639b Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Wed, 30 Jan 2013 22:47:29 +0900
+Subject: [PATCH] f2fs: fix typo mistake for data_version description
+
+In f2fs_inode_info structure, the description for data_version
+has a typo mistake. It should be latest instead of lastes.
+So, correcting that.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index f4f5097..975cb44 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -141,7 +141,7 @@ struct f2fs_inode_info {
+ 
+ 	/* Use below internally in f2fs*/
+ 	unsigned long flags;		/* use to pass per-file flags */
+-	unsigned long long data_version;/* lastes version of data for fsync */
++	unsigned long long data_version;/* latest version of data for fsync */
+ 	atomic_t dirty_dents;		/* # of dirty dentry pages */
+ 	f2fs_hash_t chash;		/* hash value of given file name */
+ 	unsigned int clevel;		/* maximum level of given file name */
+-- 
+1.8.2.1.422.gdcd8c09
+

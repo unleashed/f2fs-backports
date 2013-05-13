@@ -1,0 +1,30 @@
+From ab09cf491969744832cd3b6204d7725264e41419 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 8 Dec 2012 14:54:18 +0900
+Subject: [PATCH] f2fs: make use of GFP_F2FS_ZERO for setting gfp_mask
+
+Since, GFP_NOFS and __GFP_ZERO is being used to set gfp_mask.
+We can instead make use of already predefined macro GFP_F2FS_ZERO.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+---
+ fs/f2fs/namei.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 2d720ca..89b7675 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -293,7 +293,7 @@ static int f2fs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+ 	inode->i_op = &f2fs_dir_inode_operations;
+ 	inode->i_fop = &f2fs_dir_operations;
+ 	inode->i_mapping->a_ops = &f2fs_dblock_aops;
+-	mapping_set_gfp_mask(inode->i_mapping, GFP_NOFS | __GFP_ZERO);
++	mapping_set_gfp_mask(inode->i_mapping, GFP_F2FS_ZERO);
+ 
+ 	set_inode_flag(F2FS_I(inode), FI_INC_LINK);
+ 	err = f2fs_add_link(dentry, inode);
+-- 
+1.8.2.1.422.gdcd8c09
+

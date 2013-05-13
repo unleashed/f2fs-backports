@@ -1,0 +1,79 @@
+From 7f187b01e4e7b542cc8f2683a33919c2e0a7b7f7 Mon Sep 17 00:00:00 2001
+From: Changman Lee <cm224.lee@samsung.com>
+Date: Wed, 23 Jan 2013 09:40:23 +0900
+Subject: [PATCH] f2fs: save device node number into f2fs_inode
+
+This patch stores inode->i_rdev into on-disk inode structure.
+
+Alun reported that:
+ aspire tmp # mount -t f2fs /dev/sdb mnt
+ aspire tmp # mknod mnt/sda1 b 8 1
+ aspire tmp # mknod mnt/null c 1 3
+ aspire tmp # mknod mnt/console c 5 1
+ aspire tmp # ls -l mnt
+ total 2
+ crw-r--r-- 1 root root 5, 1 Jan 22 18:44 console
+ crw-r--r-- 1 root root 1, 3 Jan 22 18:44 null
+ brw-r--r-- 1 root root 8, 1 Jan 22 18:44 sda1
+ aspire tmp # umount mnt
+ aspire tmp # mount -t f2fs /dev/sdb mnt
+ aspire tmp # ls -l mnt
+ total 2
+ crw-r--r-- 1 root root 0, 0 Jan 22 18:44 console
+ crw-r--r-- 1 root root 0, 0 Jan 22 18:44 null
+ brw-r--r-- 1 root root 0, 0 Jan 22 18:44 sda1
+
+In this report, f2fs lost the major/minor numbers of device files after umount.
+The reason was revealed that f2fs does not store the inode->i_rdev to the
+on-disk inode data structure.
+
+So, as the other file systems do, f2fs also stores i_rdev into the i_addr fields
+in on-disk inode structure without any on-disk layout changes.
+Note that, this bug is limited to device files made by mknod().
+
+Reported-and-Tested-by: Alun Jones <alun.linux@ty-penguin.org.uk>
+Signed-off-by: Changman Lee <cm224.lee@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/inode.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index 7942417..340a21b 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -100,6 +100,10 @@ static int do_read_inode(struct inode *inode)
+ 	inode->i_ctime.tv_nsec = le32_to_cpu(ri->i_ctime_nsec);
+ 	inode->i_mtime.tv_nsec = le32_to_cpu(ri->i_mtime_nsec);
+ 	inode->i_generation = le32_to_cpu(ri->i_generation);
++	if (ri->i_addr[0])
++		inode->i_rdev = old_decode_dev(le32_to_cpu(ri->i_addr[0]));
++	else
++		inode->i_rdev = new_decode_dev(le32_to_cpu(ri->i_addr[1]));
+ 
+ 	fi->i_current_depth = le32_to_cpu(ri->i_current_depth);
+ 	fi->i_xattr_nid = le32_to_cpu(ri->i_xattr_nid);
+@@ -203,6 +207,20 @@ void update_inode(struct inode *inode, struct page *node_page)
+ 	ri->i_flags = cpu_to_le32(F2FS_I(inode)->i_flags);
+ 	ri->i_pino = cpu_to_le32(F2FS_I(inode)->i_pino);
+ 	ri->i_generation = cpu_to_le32(inode->i_generation);
++
++	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
++		if (old_valid_dev(inode->i_rdev)) {
++			ri->i_addr[0] =
++				cpu_to_le32(old_encode_dev(inode->i_rdev));
++			ri->i_addr[1] = 0;
++		} else {
++			ri->i_addr[0] = 0;
++			ri->i_addr[1] =
++				cpu_to_le32(new_encode_dev(inode->i_rdev));
++			ri->i_addr[2] = 0;
++		}
++	}
++
+ 	set_cold_node(inode, node_page);
+ 	set_page_dirty(node_page);
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

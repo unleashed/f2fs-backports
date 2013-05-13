@@ -1,0 +1,35 @@
+From 4a1e1e491c8c4d20886fc4536fbdfe34f7fcdc4a Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 3 Jan 2013 08:57:21 +0900
+Subject: [PATCH] f2fs: initialize newly allocated dnode structure
+
+This patch resolves Coverity #753112.
+
+In practical, the existing code flow does not fall into the reported errorneous
+path. But, anyway, let's avoid this for future.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 8199ee9..2807132 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -211,11 +211,11 @@ struct dnode_of_data {
+ static inline void set_new_dnode(struct dnode_of_data *dn, struct inode *inode,
+ 		struct page *ipage, struct page *npage, nid_t nid)
+ {
++	memset(dn, 0, sizeof(*dn));
+ 	dn->inode = inode;
+ 	dn->inode_page = ipage;
+ 	dn->node_page = npage;
+ 	dn->nid = nid;
+-	dn->inode_page_locked = 0;
+ }
+ 
+ /*
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,69 @@
+From 93093b90747f37c8d372245e2da99d7ce470db70 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Tue, 15 Jan 2013 16:45:24 +0900
+Subject: [PATCH] f2fs: remove the blk_plug usage in f2fs_write_data_pages
+
+Let's consider the usage of blk_plug in f2fs_write_data_pages().
+We can come up with the two issues: lock contention and task awareness.
+
+1. Merging bios prior to grabing "queue lock"
+ The f2fs merges consecutive IOs in the file system level before
+ submitting any bios, which is similar with the back merge by the
+ plugging mechanism in attempt_plug_merge(). Both of them need to acquire
+ no queue lock.
+
+2. Merging policy with respect to tasks
+ The f2fs merges IOs as much as possible regardless of tasks, while
+ blk-plugging is conducted on a basis of tasks. As we can understand
+ there are trade-offs, f2fs tries to maximize the write performance with
+ well-merged bios.
+
+As a result, if f2fs produces many consecutive but separated bios in
+writepages(), it would be good to use blk-plugging since f2fs would be
+able to avoid queue lock contention in the block layer by merging them.
+But, f2fs merges IOs and submit one bio, which means that there are not
+much chances to merge bios by attempt_plug_merge().
+
+However, f2fs has already been used blk_plug by triggering generic_writepages()
+in f2fs_write_data_pages().
+So to make the overall code consistency, I'd like to remove blk_plug there.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 3aa5ce7..b1347fc 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -547,6 +547,15 @@ redirty_out:
+ 
+ #define MAX_DESIRED_PAGES_WP	4096
+ 
++static int __f2fs_writepage(struct page *page, struct writeback_control *wbc,
++			void *data)
++{
++	struct address_space *mapping = data;
++	int ret = mapping->a_ops->writepage(page, wbc);
++	mapping_set_error(mapping, ret);
++	return ret;
++}
++
+ static int f2fs_write_data_pages(struct address_space *mapping,
+ 			    struct writeback_control *wbc)
+ {
+@@ -563,7 +572,7 @@ static int f2fs_write_data_pages(struct address_space *mapping,
+ 
+ 	if (!S_ISDIR(inode->i_mode))
+ 		mutex_lock(&sbi->writepages);
+-	ret = generic_writepages(mapping, wbc);
++	ret = write_cache_pages(mapping, wbc, __f2fs_writepage, mapping);
+ 	if (!S_ISDIR(inode->i_mode))
+ 		mutex_unlock(&sbi->writepages);
+ 	f2fs_submit_bio(sbi, DATA, (wbc->sync_mode == WB_SYNC_ALL));
+-- 
+1.8.2.1.422.gdcd8c09
+
