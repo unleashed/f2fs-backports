@@ -1,0 +1,29 @@
+From 61ff36922a201c7623be39e6a413644a35e5e809 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Fri, 25 Jan 2013 17:38:55 +0100
+Subject: [PATCH] f2fs: change the prototype for show_options
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/super.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 7805241..38bcd08 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -210,9 +210,9 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
+ 	return 0;
+ }
+ 
+-static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
++static int f2fs_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ {
+-	struct f2fs_sb_info *sbi = F2FS_SB(root->d_sb);
++	struct f2fs_sb_info *sbi = F2FS_SB(vfs->mnt_sb);
+ 
+ 	if (test_opt(sbi, BG_GC))
+ 		seq_puts(seq, ",background_gc_on");
+-- 
+1.8.2.1.422.gdcd8c09
+

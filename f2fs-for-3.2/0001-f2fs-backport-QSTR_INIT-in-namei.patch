@@ -1,0 +1,28 @@
+From 98f12e1d9cef89f126d57bdd464b152865f7db78 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Thu, 24 Jan 2013 21:02:14 +0100
+Subject: [PATCH] f2fs: backport QSTR_INIT in namei
+
+The upstream commit introducing QSTR_INIT is 26fe575028703948880fce4355a210c76bb0536e.
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/namei.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 3807949..f4c09d9 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -199,7 +199,7 @@ out:
+ 
+ struct dentry *f2fs_get_parent(struct dentry *child)
+ {
+-	struct qstr dotdot = QSTR_INIT("..", 2);
++	struct qstr dotdot = { .name = "..", .len = 2 };
+ 	unsigned long ino = f2fs_inode_by_name(child->d_inode, &dotdot);
+ 	if (!ino)
+ 		return ERR_PTR(-ENOENT);
+-- 
+1.8.2.1.422.gdcd8c09
+

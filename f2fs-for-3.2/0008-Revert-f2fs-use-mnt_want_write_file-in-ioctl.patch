@@ -1,0 +1,39 @@
+From 15bb0354b9e63b069e73da90edfb7dae1d9cc9ff Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Mon, 13 May 2013 18:10:29 +0200
+Subject: [PATCH] Revert "f2fs: use mnt_want_write_file() in ioctl"
+
+This reverts commit bdaec334bbe7d234ca6ddd81aa74b2938d40e6b4.
+
+Support for this interface was introduced in kernel 3.5.
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/file.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 207b180..8a6922e 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -589,7 +589,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 	{
+ 		unsigned int oldflags;
+ 
+-		ret = mnt_want_write_file(filp);
++		ret = mnt_want_write(filp->f_path.mnt);
+ 		if (ret)
+ 			return ret;
+ 
+@@ -626,7 +626,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+ 		inode->i_ctime = CURRENT_TIME;
+ 		mark_inode_dirty(inode);
+ out:
+-		mnt_drop_write_file(filp);
++		mnt_drop_write(filp->f_path.mnt);
+ 		return ret;
+ 	}
+ 	default:
+-- 
+1.8.2.1.422.gdcd8c09
+

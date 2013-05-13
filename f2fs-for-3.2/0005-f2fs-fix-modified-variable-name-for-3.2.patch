@@ -1,0 +1,25 @@
+From a83a591528e8b3f5813c1f238ee09bc9bdb0a492 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Fri, 25 Jan 2013 17:33:25 +0100
+Subject: [PATCH] f2fs: fix modified variable name for 3.2
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/gc.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/gc.h b/fs/f2fs/gc.h
+index 2c6a6bd..4caa7ba 100644
+--- a/fs/f2fs/gc.h
++++ b/fs/f2fs/gc.h
+@@ -97,6 +97,6 @@ static inline int is_idle(struct f2fs_sb_info *sbi)
+ {
+ 	struct block_device *bdev = sbi->sb->s_bdev;
+ 	struct request_queue *q = bdev_get_queue(bdev);
+-	struct request_list *rl = &q->root_rl;
++	struct request_list *rl = &q->rq;
+ 	return !(rl->count[BLK_RW_SYNC]) && !(rl->count[BLK_RW_ASYNC]);
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

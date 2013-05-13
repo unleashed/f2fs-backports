@@ -1,0 +1,55 @@
+From 6d4156f145e0a7e4de922499af9040c88d5fa989 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Fri, 25 Jan 2013 17:35:02 +0100
+Subject: [PATCH] f2fs: fix namei prototypes for 3.2 kernels
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/namei.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index c48bb70..29dbfed 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -118,8 +118,8 @@ static inline void set_cold_files(struct f2fs_sb_info *sbi, struct inode *inode,
+ 	}
+ }
+ 
+-static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
+-						bool excl)
++static int f2fs_create(struct inode *dir, struct dentry *dentry, int mode,
++						struct nameidata *nd)
+ {
+ 	struct super_block *sb = dir->i_sb;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+@@ -207,7 +207,7 @@ struct dentry *f2fs_get_parent(struct dentry *child)
+ }
+ 
+ static struct dentry *f2fs_lookup(struct inode *dir, struct dentry *dentry,
+-		unsigned int flags)
++		struct nameidata *nd)
+ {
+ 	struct inode *inode = NULL;
+ 	struct f2fs_dir_entry *de;
+@@ -304,7 +304,7 @@ out:
+ 	return err;
+ }
+ 
+-static int f2fs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
++static int f2fs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
+ 	struct inode *inode;
+@@ -354,7 +354,7 @@ static int f2fs_rmdir(struct inode *dir, struct dentry *dentry)
+ }
+ 
+ static int f2fs_mknod(struct inode *dir, struct dentry *dentry,
+-				umode_t mode, dev_t rdev)
++				int mode, dev_t rdev)
+ {
+ 	struct super_block *sb = dir->i_sb;
+ 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+-- 
+1.8.2.1.422.gdcd8c09
+
