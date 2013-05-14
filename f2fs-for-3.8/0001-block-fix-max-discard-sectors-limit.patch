@@ -1,0 +1,66 @@
+From 0ce1091e49efa392c2769486e5742faa27361a19 Mon Sep 17 00:00:00 2001
+From: James Bottomley <JBottomley@Parallels.com>
+Date: Wed, 24 Apr 2013 08:52:50 -0600
+Subject: [PATCH] block: fix max discard sectors limit
+
+linux-v3.8-rc1 and later support for plug for blkdev_issue_discard with
+commit 0cfbcafcae8b7364b5fa96c2b26ccde7a3a296a9
+(block: add plug for blkdev_issue_discard )
+
+For example,
+1) DISCARD rq-1 with size size 4GB
+2) DISCARD rq-2 with size size 1GB
+
+If these 2 discard requests get merged, final request size will be 5GB.
+
+In this case, request's __data_len field may overflow as it can store
+max 4GB(unsigned int).
+
+This issue was observed while doing mkfs.f2fs on 5GB SD card:
+https://lkml.org/lkml/2013/4/1/292
+
+Info: sector size = 512
+Info: total sectors = 11370496 (in 512bytes)
+Info: zone aligned segment0 blkaddr: 512
+[  257.789764] blk_update_request: bio idx 0 >= vcnt 0
+
+mkfs process gets stuck in D state and I see the following in the dmesg:
+
+[  257.789733] __end_that: dev mmcblk0: type=1, flags=122c8081
+[  257.789764]   sector 4194304, nr/cnr 2981888/4294959104
+[  257.789764]   bio df3840c0, biotail df3848c0, buffer   (null), len
+1526726656
+[  257.789764] blk_update_request: bio idx 0 >= vcnt 0
+[  257.794921] request botched: dev mmcblk0: type=1, flags=122c8081
+[  257.794921]   sector 4194304, nr/cnr 2981888/4294959104
+[  257.794921]   bio df3840c0, biotail df3848c0, buffer   (null), len
+1526726656
+
+This patch fixes this issue.
+
+Reported-by: Max Filippov <jcmvbkbc@gmail.com>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Tested-by: Max Filippov <jcmvbkbc@gmail.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+---
+ include/linux/blkdev.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index f94bc83..1dbdb1a 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -836,7 +836,7 @@ static inline unsigned int blk_queue_get_max_sectors(struct request_queue *q,
+ 						     unsigned int cmd_flags)
+ {
+ 	if (unlikely(cmd_flags & REQ_DISCARD))
+-		return q->limits.max_discard_sectors;
++		return min(q->limits.max_discard_sectors, UINT_MAX >> 9);
+ 
+ 	if (unlikely(cmd_flags & REQ_WRITE_SAME))
+ 		return q->limits.max_write_same_sectors;
+-- 
+1.8.2.1.422.gdcd8c09
+
