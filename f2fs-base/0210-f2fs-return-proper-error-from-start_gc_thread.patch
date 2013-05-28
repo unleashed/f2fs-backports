@@ -1,0 +1,56 @@
+From 3c187bc360914df7694c2a9502c17aead6d5c822 Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sun, 26 May 2013 11:05:32 +0900
+Subject: [PATCH] f2fs: return proper error from start_gc_thread
+
+when there is an error from kthread_run, then return proper error
+rather than returning -ENOMEM.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Amit Sahrawat <a.sahrawat@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 25b083c..ddc2c67 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -91,23 +91,28 @@ int start_gc_thread(struct f2fs_sb_info *sbi)
+ {
+ 	struct f2fs_gc_kthread *gc_th;
+ 	dev_t dev = sbi->sb->s_bdev->bd_dev;
++	int err = 0;
+ 
+ 	if (!test_opt(sbi, BG_GC))
+-		return 0;
++		goto out;
+ 	gc_th = kmalloc(sizeof(struct f2fs_gc_kthread), GFP_KERNEL);
+-	if (!gc_th)
+-		return -ENOMEM;
++	if (!gc_th) {
++		err = -ENOMEM;
++		goto out;
++	}
+ 
+ 	sbi->gc_thread = gc_th;
+ 	init_waitqueue_head(&sbi->gc_thread->gc_wait_queue_head);
+ 	sbi->gc_thread->f2fs_gc_task = kthread_run(gc_thread_func, sbi,
+ 			"f2fs_gc-%u:%u", MAJOR(dev), MINOR(dev));
+ 	if (IS_ERR(gc_th->f2fs_gc_task)) {
++		err = PTR_ERR(gc_th->f2fs_gc_task);
+ 		kfree(gc_th);
+ 		sbi->gc_thread = NULL;
+-		return -ENOMEM;
+ 	}
+-	return 0;
++
++out:
++	return err;
+ }
+ 
+ void stop_gc_thread(struct f2fs_sb_info *sbi)
+-- 
+1.8.2.1.422.gdcd8c09
+

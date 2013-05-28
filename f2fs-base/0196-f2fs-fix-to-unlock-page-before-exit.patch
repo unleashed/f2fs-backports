@@ -1,0 +1,45 @@
+From a24f3f5d8802a07699151f4f326f3320f5ba12a2 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 20 May 2013 10:26:09 +0900
+Subject: [PATCH] f2fs: fix to unlock page before exit
+
+If we got an error after lock_page, we should unlock it before exit.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/recovery.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index f91ff0f..3a4b51c 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -347,7 +347,7 @@ static int recover_data(struct f2fs_sb_info *sbi,
+ 		lock_page(page);
+ 
+ 		if (cp_ver != cpver_of_node(page))
+-			goto unlock_out;
++			break;
+ 
+ 		entry = get_fsync_inode(head, ino_of_node(page));
+ 		if (!entry)
+@@ -355,7 +355,7 @@ static int recover_data(struct f2fs_sb_info *sbi,
+ 
+ 		err = do_recover_data(sbi, entry->inode, page, blkaddr);
+ 		if (err)
+-			goto out;
++			break;
+ 
+ 		if (entry->blkaddr == blkaddr) {
+ 			iput(entry->inode);
+@@ -366,7 +366,6 @@ next:
+ 		/* check next segment */
+ 		blkaddr = next_blkaddr_of_node(page);
+ 	}
+-unlock_out:
+ 	unlock_page(page);
+ out:
+ 	__free_pages(page, 0);
+-- 
+1.8.2.1.422.gdcd8c09
+

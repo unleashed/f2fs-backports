@@ -1,0 +1,105 @@
+From 88b449fc2f8e207d1d2f15f6115b7eb4781a6e1c Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 20 May 2013 09:55:50 +0900
+Subject: [PATCH] f2fs: change get_new_data_page to pass a locked node page
+
+This patch is for passing a locked node page to get_dnode_of_data.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c | 12 +++++++-----
+ fs/f2fs/dir.c  |  4 ++--
+ fs/f2fs/f2fs.h |  2 +-
+ fs/f2fs/file.c |  2 +-
+ 4 files changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 05fb5c6..af74549 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -280,8 +280,8 @@ repeat:
+  * Also, caller should grab and release a mutex by calling mutex_lock_op() and
+  * mutex_unlock_op().
+  */
+-struct page *get_new_data_page(struct inode *inode, pgoff_t index,
+-						bool new_i_size)
++struct page *get_new_data_page(struct inode *inode,
++		struct page *npage, pgoff_t index, bool new_i_size)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct address_space *mapping = inode->i_mapping;
+@@ -289,18 +289,20 @@ struct page *get_new_data_page(struct inode *inode, pgoff_t index,
+ 	struct dnode_of_data dn;
+ 	int err;
+ 
+-	set_new_dnode(&dn, inode, NULL, NULL, 0);
++	set_new_dnode(&dn, inode, npage, npage, 0);
+ 	err = get_dnode_of_data(&dn, index, ALLOC_NODE);
+ 	if (err)
+ 		return ERR_PTR(err);
+ 
+ 	if (dn.data_blkaddr == NULL_ADDR) {
+ 		if (reserve_new_block(&dn)) {
+-			f2fs_put_dnode(&dn);
++			if (!npage)
++				f2fs_put_dnode(&dn);
+ 			return ERR_PTR(-ENOSPC);
+ 		}
+ 	}
+-	f2fs_put_dnode(&dn);
++	if (!npage)
++		f2fs_put_dnode(&dn);
+ repeat:
+ 	page = grab_cache_page(mapping, index);
+ 	if (!page)
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index 1ac6b93..7db6e58 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -287,7 +287,7 @@ static int make_empty_dir(struct inode *inode, struct inode *parent)
+ 	struct f2fs_dir_entry *de;
+ 	void *kaddr;
+ 
+-	dentry_page = get_new_data_page(inode, 0, true);
++	dentry_page = get_new_data_page(inode, NULL, 0, true);
+ 	if (IS_ERR(dentry_page))
+ 		return PTR_ERR(dentry_page);
+ 
+@@ -448,7 +448,7 @@ start:
+ 	bidx = dir_block_index(level, (le32_to_cpu(dentry_hash) % nbucket));
+ 
+ 	for (block = bidx; block <= (bidx + nblock - 1); block++) {
+-		dentry_page = get_new_data_page(dir, block, true);
++		dentry_page = get_new_data_page(dir, NULL, block, true);
+ 		if (IS_ERR(dentry_page))
+ 			return PTR_ERR(dentry_page);
+ 
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index ef6cac8..cbae2b6 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -1027,7 +1027,7 @@ int reserve_new_block(struct dnode_of_data *);
+ void update_extent_cache(block_t, struct dnode_of_data *);
+ struct page *find_data_page(struct inode *, pgoff_t, bool);
+ struct page *get_lock_data_page(struct inode *, pgoff_t);
+-struct page *get_new_data_page(struct inode *, pgoff_t, bool);
++struct page *get_new_data_page(struct inode *, struct page *, pgoff_t, bool);
+ int f2fs_readpage(struct f2fs_sb_info *, struct page *, block_t, int);
+ int do_write_data_page(struct page *);
+ 
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 1cae864..b8e34db 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -387,7 +387,7 @@ static void fill_zero(struct inode *inode, pgoff_t index,
+ 	f2fs_balance_fs(sbi);
+ 
+ 	ilock = mutex_lock_op(sbi);
+-	page = get_new_data_page(inode, index, false);
++	page = get_new_data_page(inode, NULL, index, false);
+ 	mutex_unlock_op(sbi, ilock);
+ 
+ 	if (!IS_ERR(page)) {
+-- 
+1.8.2.1.422.gdcd8c09
+

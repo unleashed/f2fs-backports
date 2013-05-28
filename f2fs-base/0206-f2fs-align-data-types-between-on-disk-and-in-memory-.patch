@@ -1,0 +1,52 @@
+From 4d247804efa47b4ce73c6b27e11a100f411604f5 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 24 May 2013 12:41:04 +0900
+Subject: [PATCH] f2fs: align data types between on-disk and in-memory block
+ addresses
+
+The on-disk block address is defined as __le32, but in-memory block address,
+block_t, does as u64.
+
+Let's synchronize them to 32 bits.
+
+Reported-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h          | 5 ++++-
+ include/linux/f2fs_fs.h | 4 ++--
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 7b05029..92fd4e9 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -37,7 +37,10 @@
+ 		typecheck(unsigned long long, b) &&			\
+ 		((long long)((a) - (b)) > 0))
+ 
+-typedef u64 block_t;
++typedef u32 block_t;	/*
++			 * should not change u32, since it is the on-disk block
++			 * address format, __le32.
++			 */
+ typedef u32 nid_t;
+ 
+ struct f2fs_mount_info {
+diff --git a/include/linux/f2fs_fs.h b/include/linux/f2fs_fs.h
+index df6fab8..383d5e3 100644
+--- a/include/linux/f2fs_fs.h
++++ b/include/linux/f2fs_fs.h
+@@ -20,8 +20,8 @@
+ #define F2FS_BLKSIZE			4096	/* support only 4KB block */
+ #define F2FS_MAX_EXTENSION		64	/* # of extension entries */
+ 
+-#define NULL_ADDR		0x0U
+-#define NEW_ADDR		-1U
++#define NULL_ADDR		((block_t)0)	/* used as block_t addresses */
++#define NEW_ADDR		((block_t)-1)	/* used as block_t addresses */
+ 
+ #define F2FS_ROOT_INO(sbi)	(sbi->root_ino_num)
+ #define F2FS_NODE_INO(sbi)	(sbi->node_ino_num)
+-- 
+1.8.2.1.422.gdcd8c09
+

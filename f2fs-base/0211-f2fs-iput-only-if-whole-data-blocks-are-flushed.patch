@@ -1,0 +1,42 @@
+From 26cd4ad9f51def2d23772c931faa86bb579d7fe5 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 27 May 2013 10:32:01 +0900
+Subject: [PATCH] f2fs: iput only if whole data blocks are flushed
+
+If there remains some unwritten blocks from the recovery, we should not call
+iput on that directory inode.
+Otherwise, we can loose some dentry blocks after the recovery.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 01ddc91..0d3701d 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -501,8 +501,10 @@ void remove_dirty_dir_inode(struct inode *inode)
+ 		return;
+ 
+ 	spin_lock(&sbi->dir_inode_lock);
+-	if (atomic_read(&F2FS_I(inode)->dirty_dents))
+-		goto out;
++	if (atomic_read(&F2FS_I(inode)->dirty_dents)) {
++		spin_unlock(&sbi->dir_inode_lock);
++		return;
++	}
+ 
+ 	list_for_each(this, head) {
+ 		struct dir_inode_entry *entry;
+@@ -516,7 +518,6 @@ void remove_dirty_dir_inode(struct inode *inode)
+ 			break;
+ 		}
+ 	}
+-out:
+ 	spin_unlock(&sbi->dir_inode_lock);
+ 
+ 	/* Only from the recovery routine */
+-- 
+1.8.2.1.422.gdcd8c09
+

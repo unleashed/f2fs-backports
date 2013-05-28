@@ -1,0 +1,59 @@
+From 32770ded0bc5a36afd0acf0d87589b89e60c31e4 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 20 May 2013 20:28:47 +0900
+Subject: [PATCH] f2fs: add f2fs_readonly()
+
+Introduce a simple macro function for readability.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h  | 5 +++++
+ fs/f2fs/file.c  | 2 +-
+ fs/f2fs/super.c | 2 +-
+ 3 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 9182b27..6594ce1 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -887,6 +887,11 @@ static inline int cond_clear_inode_flag(struct f2fs_inode_info *fi, int flag)
+ 	return 0;
+ }
+ 
++static inline int f2fs_readonly(struct super_block *sb)
++{
++	return sb->s_flags & MS_RDONLY;
++}
++
+ /*
+  * file.c
+  */
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 9937ba1..316bcfe 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -114,7 +114,7 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+ 		.for_reclaim = 0,
+ 	};
+ 
+-	if (inode->i_sb->s_flags & MS_RDONLY)
++	if (f2fs_readonly(inode->i_sb))
+ 		return 0;
+ 
+ 	trace_f2fs_sync_file_enter(inode);
+diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
+index 8555f7d..3ac305d 100644
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@ -170,7 +170,7 @@ static int f2fs_freeze(struct super_block *sb)
+ {
+ 	int err;
+ 
+-	if (sb->s_flags & MS_RDONLY)
++	if (f2fs_readonly(sb))
+ 		return 0;
+ 
+ 	err = f2fs_sync_fs(sb, 1);
+-- 
+1.8.2.1.422.gdcd8c09
+

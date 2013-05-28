@@ -1,0 +1,77 @@
+From 449c105beb851003ef69cff8ce0ce8529eda8b48 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 20 May 2013 16:15:22 +0900
+Subject: [PATCH] f2fs: avoid RECLAIM_FS-ON-W: deadlock
+
+This patch tries to avoid the following deadlock condition of which the reclaim
+path can trigger f2fs_balance_fs again.
+
+=================================
+[ INFO: inconsistent lock state ]
+---------------------------------
+inconsistent {RECLAIM_FS-ON-W} -> {IN-RECLAIM_FS-W} usage.
+kswapd0/41 [HC0[0]:SC0[0]:HE1:SE1] takes:
+ (&sbi->gc_mutex){+.+.?.}, at: f2fs_balance_fs+0xe6/0x100 [f2fs]
+{RECLAIM_FS-ON-W} state was registered at:
+  [<ffffffff810aa5a9>] mark_held_locks+0xb9/0x140
+  [<ffffffff810aae85>] lockdep_trace_alloc+0x85/0xf0
+  [<ffffffff8113ab2c>] __alloc_pages_nodemask+0x7c/0x9b0
+  [<ffffffff81175aa8>] alloc_pages_current+0xb8/0x180
+  [<ffffffff811319cf>] __page_cache_alloc+0xaf/0xd0
+  [<ffffffff8113225c>] find_or_create_page+0x4c/0xb0
+  [<ffffffffa021359e>] find_data_page+0x14e/0x210 [f2fs]
+  [<ffffffffa021161b>] f2fs_gc+0x9eb/0xd90 [f2fs]
+  [<ffffffffa0218fae>] f2fs_balance_fs+0xee/0x100 [f2fs]
+  [<ffffffffa020848c>] f2fs_setattr+0x6c/0x200 [f2fs]
+  [<ffffffff811ae51b>] notify_change+0x1db/0x3a0
+  [<ffffffff8118fbd0>] do_truncate+0x60/0xa0
+  [<ffffffff8118fd95>] vfs_truncate+0x185/0x1b0
+  [<ffffffff8118fe1c>] do_sys_truncate+0x5c/0xa0
+  [<ffffffff8118ffee>] SyS_truncate+0xe/0x10
+  [<ffffffff816e2b42>] system_call_fastpath+0x16/0x1b
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c  | 4 ++--
+ fs/f2fs/inode.c | 3 +--
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index c320f7f..1644fff 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -199,7 +199,7 @@ struct page *find_data_page(struct inode *inode, pgoff_t index, bool sync)
+ 	if (dn.data_blkaddr == NEW_ADDR)
+ 		return ERR_PTR(-EINVAL);
+ 
+-	page = grab_cache_page(mapping, index);
++	page = grab_cache_page_write_begin(mapping, index, AOP_FLAG_NOFS);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+ 
+@@ -234,7 +234,7 @@ struct page *get_lock_data_page(struct inode *inode, pgoff_t index)
+ 	int err;
+ 
+ repeat:
+-	page = grab_cache_page(mapping, index);
++	page = grab_cache_page_write_begin(mapping, index, AOP_FLAG_NOFS);
+ 	if (!page)
+ 		return ERR_PTR(-ENOMEM);
+ 
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index 91ac7f9..a18946e 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -130,8 +130,7 @@ make_now:
+ 		inode->i_op = &f2fs_dir_inode_operations;
+ 		inode->i_fop = &f2fs_dir_operations;
+ 		inode->i_mapping->a_ops = &f2fs_dblock_aops;
+-		mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER_MOVABLE |
+-				__GFP_ZERO);
++		mapping_set_gfp_mask(inode->i_mapping, GFP_F2FS_ZERO);
+ 	} else if (S_ISLNK(inode->i_mode)) {
+ 		inode->i_op = &f2fs_symlink_inode_operations;
+ 		inode->i_mapping->a_ops = &f2fs_dblock_aops;
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,30 @@
+From ea137c7a47006c60cda6ec3e67af8b896b44293b Mon Sep 17 00:00:00 2001
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Date: Thu, 23 May 2013 13:02:13 +0300
+Subject: [PATCH] f2fs: dereferencing an ERR_PTR
+
+There is an error path where "dir" is an ERR_PTR.
+
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/recovery.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index dcd8e86..0dd2ce1 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -71,7 +71,8 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ out:
+ 	f2fs_msg(inode->i_sb, KERN_NOTICE, "recover_inode and its dentry: "
+ 			"ino = %x, name = %s, dir = %lx, err = %d",
+-			ino_of_node(ipage), raw_inode->i_name, dir->i_ino, err);
++			ino_of_node(ipage), raw_inode->i_name,
++			IS_ERR(dir) ? 0 : dir->i_ino, err);
+ 	return err;
+ }
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

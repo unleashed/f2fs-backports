@@ -1,0 +1,40 @@
+From 7792ffeaa60d5b2e0997163b13a13f20edfed29b Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 15 May 2013 10:49:13 +0900
+Subject: [PATCH] f2fs: remove redundant assignment
+
+We don't need to assign a value redundantly.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/recovery.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 60c8a50..2941987 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -126,7 +126,6 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 
+ 		entry = get_fsync_inode(head, ino_of_node(page));
+ 		if (entry) {
+-			entry->blkaddr = blkaddr;
+ 			if (IS_INODE(page) && is_dent_dnode(page))
+ 				set_inode_flag(F2FS_I(entry->inode),
+ 							FI_INC_LINK);
+@@ -150,10 +149,10 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head)
+ 				kmem_cache_free(fsync_entry_slab, entry);
+ 				goto unlock_out;
+ 			}
+-
+ 			list_add_tail(&entry->list, head);
+-			entry->blkaddr = blkaddr;
+ 		}
++		entry->blkaddr = blkaddr;
++
+ 		if (IS_INODE(page)) {
+ 			err = recover_inode(entry->inode, page);
+ 			if (err == -ENOENT) {
+-- 
+1.8.2.1.422.gdcd8c09
+

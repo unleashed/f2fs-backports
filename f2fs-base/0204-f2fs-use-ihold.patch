@@ -1,0 +1,36 @@
+From d0c3c757cd3814232559318dafbc8dce6e1360e5 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 22 May 2013 12:06:26 +0900
+Subject: [PATCH] f2fs: use ihold
+
+Use the following helper function committed by Al.
+
+commit 7de9c6ee3ecffd99e1628e81a5ea5468f7581a1f
+Author: Al Viro <viro@zeniv.linux.org.uk>
+Date:   Sat Oct 23 11:11:40 2010 -0400
+
+    new helper: ihold()
+
+...
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/namei.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 71aa305..efe0a12 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -172,7 +172,7 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
+ 	f2fs_balance_fs(sbi);
+ 
+ 	inode->i_ctime = CURRENT_TIME;
+-	atomic_inc(&inode->i_count);
++	ihold(inode);
+ 
+ 	set_inode_flag(F2FS_I(inode), FI_INC_LINK);
+ 	ilock = mutex_lock_op(sbi);
+-- 
+1.8.2.1.422.gdcd8c09
+

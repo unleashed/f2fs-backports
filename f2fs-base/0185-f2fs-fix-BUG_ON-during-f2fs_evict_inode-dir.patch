@@ -1,0 +1,137 @@
+From 9eee71abb1ff0e1d87bba56529ea6824a86a98ef Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 15 May 2013 16:40:02 +0900
+Subject: [PATCH] f2fs: fix BUG_ON during f2fs_evict_inode(dir)
+
+During the dentry recovery routine, recover_inode() triggers __f2fs_add_link
+with its directory inode.
+
+In the following scenario, a bug is captured.
+ 1. dir = f2fs_iget(pino)
+ 2. __f2fs_add_link(dir, name)
+ 3. iput(dir)
+  -> f2fs_evict_inode() faces with BUG_ON(atomic_read(fi->dirty_dents))
+
+Kernel BUG at ffffffffa01c0676 [verbose debug info unavailable]
+[<ffffffffa01c0676>] f2fs_evict_inode+0x276/0x300 [f2fs]
+Call Trace:
+ [<ffffffff8118ea00>] evict+0xb0/0x1b0
+ [<ffffffff8118f1c5>] iput+0x105/0x190
+ [<ffffffffa01d2dac>] recover_fsync_data+0x3bc/0x1070 [f2fs]
+ [<ffffffff81692e8a>] ? io_schedule+0xaa/0xd0
+ [<ffffffff81690acb>] ? __wait_on_bit_lock+0x7b/0xc0
+ [<ffffffff8111a0e7>] ? __lock_page+0x67/0x70
+ [<ffffffff81165e21>] ? kmem_cache_alloc+0x31/0x140
+ [<ffffffff8118a502>] ? __d_instantiate+0x92/0xf0
+ [<ffffffff812a949b>] ? security_d_instantiate+0x1b/0x30
+ [<ffffffff8118a5b4>] ? d_instantiate+0x54/0x70
+
+This means that we should flush all the dentry pages between iget and iput().
+But, during the recovery routine, it is unallowed due to consistency, so we
+have to wait the whole recovery process.
+And then, write_checkpoint flushes all the dirty dentry blocks, and nicely we
+can put the stale dir inodes from the dirty_dir_inode_list.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 23 +++++++++++++++++++++++
+ fs/f2fs/f2fs.h       |  2 ++
+ fs/f2fs/recovery.c   | 14 +++++++++-----
+ 3 files changed, 34 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index b1de01d..3d11449 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -514,6 +514,29 @@ void remove_dirty_dir_inode(struct inode *inode)
+ 	}
+ out:
+ 	spin_unlock(&sbi->dir_inode_lock);
++
++	/* Only from the recovery routine */
++	if (is_inode_flag_set(F2FS_I(inode), FI_DELAY_IPUT))
++		iput(inode);
++}
++
++struct inode *check_dirty_dir_inode(struct f2fs_sb_info *sbi, nid_t ino)
++{
++	struct list_head *head = &sbi->dir_inode_list;
++	struct list_head *this;
++	struct inode *inode = NULL;
++
++	spin_lock(&sbi->dir_inode_lock);
++	list_for_each(this, head) {
++		struct dir_inode_entry *entry;
++		entry = list_entry(this, struct dir_inode_entry, list);
++		if (entry->inode->i_ino == ino) {
++			inode = entry->inode;
++			break;
++		}
++	}
++	spin_unlock(&sbi->dir_inode_lock);
++	return inode;
+ }
+ 
+ void sync_dirty_dir_inodes(struct f2fs_sb_info *sbi)
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 20aab02..ef6cac8 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -846,6 +846,7 @@ enum {
+ 	FI_INC_LINK,		/* need to increment i_nlink */
+ 	FI_ACL_MODE,		/* indicate acl mode */
+ 	FI_NO_ALLOC,		/* should not allocate any blocks */
++	FI_DELAY_IPUT,		/* used for the recovery */
+ };
+ 
+ static inline void set_inode_flag(struct f2fs_inode_info *fi, int flag)
+@@ -1012,6 +1013,7 @@ int recover_orphan_inodes(struct f2fs_sb_info *);
+ int get_valid_checkpoint(struct f2fs_sb_info *);
+ void set_dirty_dir_page(struct inode *, struct page *);
+ void remove_dirty_dir_inode(struct inode *);
++struct inode *check_dirty_dir_inode(struct f2fs_sb_info *, nid_t);
+ void sync_dirty_dir_inodes(struct f2fs_sb_info *);
+ void write_checkpoint(struct f2fs_sb_info *, bool);
+ void init_orphan_info(struct f2fs_sb_info *);
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 4d89514..23f5803 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -42,6 +42,7 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ {
+ 	struct f2fs_node *raw_node = (struct f2fs_node *)kmap(ipage);
+ 	struct f2fs_inode *raw_inode = &(raw_node->i);
++	nid_t pino = le32_to_cpu(raw_inode->i_pino);
+ 	struct qstr name;
+ 	struct f2fs_dir_entry *de;
+ 	struct page *page;
+@@ -51,10 +52,14 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ 	if (!is_dent_dnode(ipage))
+ 		goto out;
+ 
+-	dir = f2fs_iget(inode->i_sb, le32_to_cpu(raw_inode->i_pino));
+-	if (IS_ERR(dir)) {
+-		err = PTR_ERR(dir);
+-		goto out;
++	dir = check_dirty_dir_inode(F2FS_SB(inode->i_sb), pino);
++	if (!dir) {
++		dir = f2fs_iget(inode->i_sb, pino);
++		if (IS_ERR(dir)) {
++			err = PTR_ERR(dir);
++			goto out;
++		}
++		set_inode_flag(F2FS_I(dir), FI_DELAY_IPUT);
+ 	}
+ 
+ 	name.len = le32_to_cpu(raw_inode->i_namelen);
+@@ -67,7 +72,6 @@ static int recover_dentry(struct page *ipage, struct inode *inode)
+ 	} else {
+ 		err = __f2fs_add_link(dir, &name, inode);
+ 	}
+-	iput(dir);
+ out:
+ 	kunmap(ipage);
+ 	return err;
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,44 @@
+From 20e35677c64a382ccabe189ecf237db997c8636d Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 28 May 2013 09:59:27 +0900
+Subject: [PATCH] f2fs: fix incorrect iputs during the dentry recovery
+
+- iget/iput flow in the dentry recovery process
+
+1. *dir* = f2fs_iget
+2. set FI_DELAY_IPUT to *dir*
+3. add *dir* to the dirty_dir_list
+		   - __f2fs_add_link
+		     - recover_dentry)
+4. iput *dir* by remove_dirty_dir_inode
+		   - sync_dirty_dir_inodes
+		     - write_chekcpoint
+
+If *dir*'s i_count is not 1 (i.e., root dir), remove_dirty_dir_inode is called
+later and then iput is triggered again due to the FI_DELAY_IPUT flag.
+So, let's unset the flag properly once iput is triggered.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 0d3701d..6f56e57 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -521,8 +521,10 @@ void remove_dirty_dir_inode(struct inode *inode)
+ 	spin_unlock(&sbi->dir_inode_lock);
+ 
+ 	/* Only from the recovery routine */
+-	if (is_inode_flag_set(F2FS_I(inode), FI_DELAY_IPUT))
++	if (is_inode_flag_set(F2FS_I(inode), FI_DELAY_IPUT)) {
++		clear_inode_flag(F2FS_I(inode), FI_DELAY_IPUT);
+ 		iput(inode);
++	}
+ }
+ 
+ struct inode *check_dirty_dir_inode(struct f2fs_sb_info *sbi, nid_t ino)
+-- 
+1.8.2.1.422.gdcd8c09
+

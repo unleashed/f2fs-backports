@@ -1,0 +1,42 @@
+From 07b58173aa8719d04a2b71f84800e3b7713b76fa Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 21 May 2013 10:17:56 +0900
+Subject: [PATCH] f2fs: fix wrong condition check
+
+While an orphan inode has zero link_count, f2fs_gc is able to select the inode
+for foreground gc.
+
+- f2fs_gc
+ - do_garbage_collect
+   - gc_data_segment
+     : f2fs_iget is failed
+     : get_valid_blocks() != 0, so that retry
+--> here we got the infinite loop.
+
+This patch resolved this issue.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/inode.c | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
+index a18946e..b44a4c1 100644
+--- a/fs/f2fs/inode.c
++++ b/fs/f2fs/inode.c
+@@ -109,12 +109,6 @@ struct inode *f2fs_iget(struct super_block *sb, unsigned long ino)
+ 	ret = do_read_inode(inode);
+ 	if (ret)
+ 		goto bad_inode;
+-
+-	if (!sbi->por_doing && inode->i_nlink == 0) {
+-		ret = -ENOENT;
+-		goto bad_inode;
+-	}
+-
+ make_now:
+ 	if (ino == F2FS_NODE_INO(sbi)) {
+ 		inode->i_mapping->a_ops = &f2fs_node_aops;
+-- 
+1.8.2.1.422.gdcd8c09
+

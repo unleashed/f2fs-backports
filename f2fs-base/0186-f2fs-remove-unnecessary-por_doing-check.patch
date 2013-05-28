@@ -1,0 +1,29 @@
+From de2f2cc359ac110ad09e6f7fb00ea96e05676bd9 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 16 May 2013 08:57:43 +0900
+Subject: [PATCH] f2fs: remove unnecessary por_doing check
+
+This por_doing check is totally not related to the recovery process.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/namei.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 47abc97..729b285 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -149,8 +149,7 @@ static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
+ 
+ 	alloc_nid_done(sbi, ino);
+ 
+-	if (!sbi->por_doing)
+-		d_instantiate(dentry, inode);
++	d_instantiate(dentry, inode);
+ 	unlock_new_inode(inode);
+ 	return 0;
+ out:
+-- 
+1.8.2.1.422.gdcd8c09
+

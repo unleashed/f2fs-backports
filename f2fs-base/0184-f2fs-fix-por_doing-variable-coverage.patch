@@ -1,0 +1,45 @@
+From a9241939953e03f73b0e72020e092974054e668d Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 15 May 2013 16:12:18 +0900
+Subject: [PATCH] f2fs: fix por_doing variable coverage
+
+The reason of using sbi->por_doing is to alleviate data writes during the
+recovery.
+The find_fsync_dnodes() produces some dirty dentry pages, so we should
+cover it too with sbi->por_doing.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/recovery.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 2941987..4d89514 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -381,6 +381,7 @@ int recover_fsync_data(struct f2fs_sb_info *sbi)
+ 	INIT_LIST_HEAD(&inode_list);
+ 
+ 	/* step #1: find fsynced inode numbers */
++	sbi->por_doing = 1;
+ 	err = find_fsync_dnodes(sbi, &inode_list);
+ 	if (err)
+ 		goto out;
+@@ -389,13 +390,12 @@ int recover_fsync_data(struct f2fs_sb_info *sbi)
+ 		goto out;
+ 
+ 	/* step #2: recover data */
+-	sbi->por_doing = 1;
+ 	err = recover_data(sbi, &inode_list, CURSEG_WARM_NODE);
+-	sbi->por_doing = 0;
+ 	BUG_ON(!list_empty(&inode_list));
+ out:
+ 	destroy_fsync_dnodes(sbi, &inode_list);
+ 	kmem_cache_destroy(fsync_entry_slab);
++	sbi->por_doing = 0;
+ 	write_checkpoint(sbi, false);
+ 	return err;
+ }
+-- 
+1.8.2.1.422.gdcd8c09
+

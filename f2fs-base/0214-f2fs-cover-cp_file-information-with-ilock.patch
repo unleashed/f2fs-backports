@@ -1,0 +1,57 @@
+From cd702daf1236de51a57dd90c54a5620301e18d48 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Tue, 28 May 2013 12:25:47 +0900
+Subject: [PATCH] f2fs: cover cp_file information with ilock
+
+If a file is linked with other files, it should be checkpointed at every fsync
+calls.
+For this, we use set_cp_file() with FADVISE_CP_BIT, but previously we didn't
+cover the flag by the global lock.
+This patch fixes that the inode page stores this correctly.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/dir.c   | 8 +++++++-
+ fs/f2fs/namei.c | 6 ------
+ 2 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index b278bfb..67e2d13 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -346,8 +346,14 @@ static struct page *init_inode_metadata(struct inode *inode,
+ 
+ 	init_dent_inode(name, page);
+ 
+-	if (is_inode_flag_set(F2FS_I(inode), FI_INC_LINK))
++	/*
++	 * This file should be checkpointed during fsync.
++	 * We lost i_pino from now on.
++	 */
++	if (is_inode_flag_set(F2FS_I(inode), FI_INC_LINK)) {
++		set_cp_file(inode);
+ 		inc_nlink(inode);
++	}
+ 	return page;
+ 
+ error:
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index efe0a12..1fe1502 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -181,12 +181,6 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
+ 	if (err)
+ 		goto out;
+ 
+-	/*
+-	 * This file should be checkpointed during fsync.
+-	 * We lost i_pino from now on.
+-	 */
+-	set_cp_file(inode);
+-
+ 	d_instantiate(dentry, inode);
+ 	return 0;
+ out:
+-- 
+1.8.2.1.422.gdcd8c09
+

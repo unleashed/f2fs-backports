@@ -1,0 +1,66 @@
+From 0f47e982c25d9cec3354d05f342515f15b882592 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Mon, 13 May 2013 08:38:35 +0900
+Subject: [PATCH] f2fs: fix the inconsistent state of data pages
+
+In get_lock_data_page, if there is a data race between get_dnode_of_data for
+node and grab_cache_page for data, f2fs is able to face with the following
+BUG_ON(dn.data_blkaddr == NEW_ADDR).
+
+kernel BUG at /home/zeus/f2fs_test/src/fs/f2fs/data.c:251!
+ [<ffffffffa044966c>] get_lock_data_page+0x1ec/0x210 [f2fs]
+Call Trace:
+ [<ffffffffa043b089>] f2fs_readdir+0x89/0x210 [f2fs]
+ [<ffffffff811a0920>] ? fillonedir+0x100/0x100
+ [<ffffffff811a0920>] ? fillonedir+0x100/0x100
+ [<ffffffff811a07f8>] vfs_readdir+0xb8/0xe0
+ [<ffffffff811a0b4f>] sys_getdents+0x8f/0x110
+ [<ffffffff816d7999>] system_call_fastpath+0x16/0x1b
+
+This bug is able to be occurred when the block address of the data block is
+changed after f2fs_put_dnode().
+In order to avoid that, this patch fixes the lock order of node and data
+blocks in which the node block lock is covered by the data block lock.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 91ff93b..05fb5c6 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -233,18 +233,23 @@ struct page *get_lock_data_page(struct inode *inode, pgoff_t index)
+ 	struct page *page;
+ 	int err;
+ 
++repeat:
++	page = grab_cache_page(mapping, index);
++	if (!page)
++		return ERR_PTR(-ENOMEM);
++
+ 	set_new_dnode(&dn, inode, NULL, NULL, 0);
+ 	err = get_dnode_of_data(&dn, index, LOOKUP_NODE);
+-	if (err)
++	if (err) {
++		f2fs_put_page(page, 1);
+ 		return ERR_PTR(err);
++	}
+ 	f2fs_put_dnode(&dn);
+ 
+-	if (dn.data_blkaddr == NULL_ADDR)
++	if (dn.data_blkaddr == NULL_ADDR) {
++		f2fs_put_page(page, 1);
+ 		return ERR_PTR(-ENOENT);
+-repeat:
+-	page = grab_cache_page(mapping, index);
+-	if (!page)
+-		return ERR_PTR(-ENOMEM);
++	}
+ 
+ 	if (PageUptodate(page))
+ 		return page;
+-- 
+1.8.2.1.422.gdcd8c09
+

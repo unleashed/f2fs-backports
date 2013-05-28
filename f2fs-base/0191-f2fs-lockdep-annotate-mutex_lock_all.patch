@@ -1,0 +1,47 @@
+From 8749b71615c8e3317ebcea6fc78e006076a75a20 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Thu, 16 May 2013 20:03:12 +0200
+Subject: [PATCH] f2fs, lockdep: annotate mutex_lock_all()
+
+Majianpeng reported a lockdep splat for f2fs. It turns out mutex_lock_all()
+acquires an array of locks (in global/local lock style).
+
+Any such operation is always serialized using cp_mutex, therefore there is no
+fs_lock[] lock-order issue; tell lockdep about this using the
+mutex_lock_nest_lock() primitive.
+
+Reported-by: majianpeng <majianpeng@gmail.com>
+Signed-off-by: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 9360a03..9182b27 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -495,9 +495,17 @@ static inline void clear_ckpt_flags(struct f2fs_checkpoint *cp, unsigned int f)
+ 
+ static inline void mutex_lock_all(struct f2fs_sb_info *sbi)
+ {
+-	int i = 0;
+-	for (; i < NR_GLOBAL_LOCKS; i++)
+-		mutex_lock(&sbi->fs_lock[i]);
++	int i;
++
++	for (i = 0; i < NR_GLOBAL_LOCKS; i++) {
++		/*
++		 * This is the only time we take multiple fs_lock[]
++		 * instances; the order is immaterial since we
++		 * always hold cp_mutex, which serializes multiple
++		 * such operations.
++		 */
++		mutex_lock_nest_lock(&sbi->fs_lock[i], &sbi->cp_mutex);
++	}
+ }
+ 
+ static inline void mutex_unlock_all(struct f2fs_sb_info *sbi)
+-- 
+1.8.2.1.422.gdcd8c09
+
