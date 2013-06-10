@@ -6,9 +6,12 @@ Subject: [PATCH] filesystems: add set_nlink()
 Replace remaining direct i_nlink updates with a new set_nlink()
 updater function.
 
+[alex: trimmed down to just add the function to fs.h]
+
 Signed-off-by: Miklos Szeredi <mszeredi@suse.cz>
 Tested-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
 Signed-off-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Alejandro Martinez Ruiz <alex@flawedcode.org>
 ---
  include/linux/fs.h | 13 +++++++++++++
  1 file changed, 13 insertions(+)
