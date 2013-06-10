@@ -1,4 +1,4 @@
-From 66d448dd3b6d42bf7f8f84b69a184b0d84c307e9 Mon Sep 17 00:00:00 2001
+From 8e7ecd397405792ee7508111881e94d73435643f Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@securiforest.com>
 Date: Thu, 24 Jan 2013 20:33:54 +0100
 Subject: [PATCH] f2fs: drop usage of sb_{start,end}_pagefault to
@@ -10,7 +10,7 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  1 file changed, 10 insertions(+), 2 deletions(-)
 
 diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
-index 1cae864..24b8cda 100644
+index deefd25..cb85368 100644
 --- a/fs/f2fs/file.c
 +++ b/fs/f2fs/file.c
 @@ -39,7 +39,16 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
@@ -31,9 +31,9 @@ index 1cae864..24b8cda 100644
  
  	/* block allocation */
  	ilock = mutex_lock_op(sbi);
-@@ -92,7 +101,6 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
- 
- 	file_update_time(vma->vm_file);
+@@ -92,7 +101,6 @@ mapped:
+ 	/* fill the page */
+ 	wait_on_page_writeback(page);
  out:
 -	sb_end_pagefault(inode->i_sb);
  	return block_page_mkwrite_return(err);
