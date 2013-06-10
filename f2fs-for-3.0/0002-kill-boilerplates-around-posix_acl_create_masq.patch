@@ -1,0 +1,63 @@
+From ec9641c9cf755af5c94266a9c5000054ba5f0607 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Sat, 23 Jul 2011 03:10:32 -0400
+Subject: [PATCH] kill boilerplates around posix_acl_create_masq()
+
+new helper: posix_acl_create(&acl, gfp, mode_p).  Replaces acl with
+modified clone, on failure releases acl and replaces with NULL.
+Returns 0 or -ve on error.  All callers of posix_acl_create_masq()
+switched.
+
+[alex: trimmed down to cover only posix_acl.{c,h} for 3.0]
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Alejandro Martinez Ruiz <alex@flawedcode.org>
+---
+ fs/posix_acl.c            | 18 ++++++++++++++++++
+ include/linux/posix_acl.h |  1 +
+ 2 files changed, 19 insertions(+)
+
+diff --git a/fs/posix_acl.c b/fs/posix_acl.c
+index 0aa9f16..365a071 100644
+--- a/fs/posix_acl.c
++++ b/fs/posix_acl.c
+@@ -388,6 +388,24 @@ posix_acl_chmod_masq(struct posix_acl *acl, mode_t mode)
+ }
+ 
+ int
++posix_acl_create(struct posix_acl **acl, gfp_t gfp, mode_t *mode_p)
++{
++	struct posix_acl *clone = posix_acl_clone(*acl, gfp);
++	int err = -ENOMEM;
++	if (clone) {
++		err = posix_acl_create_masq(clone, mode_p);
++		if (err < 0) {
++			posix_acl_release(clone);
++			clone = NULL;
++		}
++	}
++	posix_acl_release(*acl);
++	*acl = clone;
++	return err;
++}
++EXPORT_SYMBOL(posix_acl_create);
++
++int
+ posix_acl_chmod(struct posix_acl **acl, gfp_t gfp, mode_t mode)
+ {
+ 	struct posix_acl *clone = posix_acl_clone(*acl, gfp);
+diff --git a/include/linux/posix_acl.h b/include/linux/posix_acl.h
+index 7a74d37..0ae0e4a 100644
+--- a/include/linux/posix_acl.h
++++ b/include/linux/posix_acl.h
+@@ -80,6 +80,7 @@ extern struct posix_acl *posix_acl_from_mode(mode_t, gfp_t);
+ extern int posix_acl_equiv_mode(const struct posix_acl *, mode_t *);
+ extern int posix_acl_create_masq(struct posix_acl *, mode_t *);
+ extern int posix_acl_chmod_masq(struct posix_acl *, mode_t);
++extern int posix_acl_create(struct posix_acl **, gfp_t, mode_t *);
+ extern int posix_acl_chmod(struct posix_acl **, gfp_t, mode_t);
+ 
+ extern struct posix_acl *get_posix_acl(struct inode *, int);
+-- 
+1.8.2.1.422.gdcd8c09
+

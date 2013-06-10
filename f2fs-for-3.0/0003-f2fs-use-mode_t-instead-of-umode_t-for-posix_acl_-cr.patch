@@ -1,0 +1,50 @@
+From f46c90b37c78405d90588149976adc8e1fee8252 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Mon, 10 Jun 2013 15:53:03 +0200
+Subject: [PATCH] f2fs: use mode_t instead of umode_t for
+ posix_acl_{create,chmod}()
+
+Introducing the prototype change to umode_t may just break other file
+systems, so we implicitly cast the umode_t to mode_t before calling
+these functions.
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/acl.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index fc1f5ef..6df1b85 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -261,15 +261,17 @@ int f2fs_init_acl(struct inode *inode, struct inode *dir)
+ 	}
+ 
+ 	if (test_opt(sbi, POSIX_ACL) && acl) {
++		mode_t mode = inode->i_mode;
+ 
+ 		if (S_ISDIR(inode->i_mode)) {
+ 			error = f2fs_set_acl(inode, ACL_TYPE_DEFAULT, acl);
+ 			if (error)
+ 				goto cleanup;
+ 		}
+-		error = posix_acl_create(&acl, GFP_KERNEL, &inode->i_mode);
++		error = posix_acl_create(&acl, GFP_KERNEL, &mode);
+ 		if (error < 0)
+ 			return error;
++		inode->i_mode = mode;
+ 		if (error > 0)
+ 			error = f2fs_set_acl(inode, ACL_TYPE_ACCESS, acl);
+ 	}
+@@ -283,7 +285,7 @@ int f2fs_acl_chmod(struct inode *inode)
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	struct posix_acl *acl;
+ 	int error;
+-	umode_t mode = get_inode_mode(inode);
++	mode_t mode = get_inode_mode(inode);
+ 
+ 	if (!test_opt(sbi, POSIX_ACL))
+ 		return 0;
+-- 
+1.8.2.1.422.gdcd8c09
+

@@ -1,0 +1,31 @@
+From f4d2cdff368e1c0baebe3bd36b8bc1caf5800561 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Mon, 10 Jun 2013 15:03:30 +0200
+Subject: [PATCH] f2fs: adapt to previous blockdev_direct_IO prototype
+
+The prototype change was introduced in upstream commit aacfc19 fs:
+simplify the blockdev_direct_IO prototype.
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/data.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 93917e3..c14dc0e 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -708,8 +708,8 @@ static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb,
+ 		return 0;
+ 
+ 	/* Needs synchronization with the cleaner */
+-	return blockdev_direct_IO(rw, iocb, inode, iov, offset, nr_segs,
+-						  get_data_block_ro);
++	return blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
++					offset, nr_segs, get_data_block_ro, NULL);
+ }
+ 
+ static void f2fs_invalidate_data_page(struct page *page, unsigned long offset)
+-- 
+1.8.2.1.422.gdcd8c09
+

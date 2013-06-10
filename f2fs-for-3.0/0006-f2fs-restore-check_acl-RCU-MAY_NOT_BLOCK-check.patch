@@ -1,0 +1,55 @@
+From add7b7202dea58a1857aa3c1a4416ee1d29b15c1 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Mon, 10 Jun 2013 14:02:58 +0200
+Subject: [PATCH] f2fs: restore ->check_acl() RCU MAY_NOT_BLOCK check
+
+Upstream commit e77819e vfs: move ACL cache lookup into generic code
+moved away from fs check_acl() handlers the RCU walking check.
+Restore it and refactor the code.
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/acl.c | 24 +++++++++++++++---------
+ 1 file changed, 15 insertions(+), 9 deletions(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index d1d4e41..f070935 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -191,18 +191,24 @@ static struct posix_acl *f2fs_get_acl(struct inode *inode, int type)
+ 
+ int f2fs_check_acl(struct inode *inode, int mask)
+ {
+-	struct posix_acl *acl;
++	int error = -EAGAIN;
+ 
+-	acl = f2fs_get_acl(inode, ACL_TYPE_ACCESS);
+-	if (IS_ERR(acl))
+-		return PTR_ERR(acl);
+-	if (acl) {
+-		int error = posix_acl_permission(inode, acl, mask);
+-		posix_acl_release(acl);
+-		return error;
++	if (mask & MAY_NOT_BLOCK) {
++		if (!negative_cached_acl(inode, ACL_TYPE_ACCESS))
++			error = -ECHILD;
++	} else {
++		struct posix_acl *acl;
++
++		acl = f2fs_get_acl(inode, ACL_TYPE_ACCESS);
++		if (IS_ERR(acl))
++			return PTR_ERR(acl);
++		if (acl) {
++			error = posix_acl_permission(inode, acl, mask);
++			posix_acl_release(acl);
++		}
+ 	}
+ 
+-	return -EAGAIN;
++	return error;
+ }
+ 
+ static int f2fs_set_acl(struct inode *inode, int type, struct posix_acl *acl)
+-- 
+1.8.2.1.422.gdcd8c09
+

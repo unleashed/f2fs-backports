@@ -1,0 +1,111 @@
+From f5fbf38df12277003345ce9970b4f94c02a78446 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Mon, 10 Jun 2013 13:04:46 +0200
+Subject: [PATCH] f2fs: provide ->check_acl() handler instead of ->get_acl()
+
+Upstream commit 4e34e719e fs: take the ACL checks to common code
+replaced the check_acl() handler of inode_operations with get_acl().
+
+Fortunately, check_acl() is usually implemented in terms of get_acl(),
+so use that.
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/acl.c   | 18 +++++++++++++++++-
+ fs/f2fs/acl.h   |  3 +--
+ fs/f2fs/file.c  |  2 +-
+ fs/f2fs/namei.c |  4 ++--
+ 4 files changed, 21 insertions(+), 6 deletions(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index c1ea883..d1d4e41 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -149,7 +149,7 @@ fail:
+ 	return ERR_PTR(-EINVAL);
+ }
+ 
+-struct posix_acl *f2fs_get_acl(struct inode *inode, int type)
++static struct posix_acl *f2fs_get_acl(struct inode *inode, int type)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+ 	int name_index = F2FS_XATTR_INDEX_POSIX_ACL_DEFAULT;
+@@ -189,6 +189,22 @@ struct posix_acl *f2fs_get_acl(struct inode *inode, int type)
+ 	return acl;
+ }
+ 
++int f2fs_check_acl(struct inode *inode, int mask)
++{
++	struct posix_acl *acl;
++
++	acl = f2fs_get_acl(inode, ACL_TYPE_ACCESS);
++	if (IS_ERR(acl))
++		return PTR_ERR(acl);
++	if (acl) {
++		int error = posix_acl_permission(inode, acl, mask);
++		posix_acl_release(acl);
++		return error;
++	}
++
++	return -EAGAIN;
++}
++
+ static int f2fs_set_acl(struct inode *inode, int type, struct posix_acl *acl)
+ {
+ 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
+diff --git a/fs/f2fs/acl.h b/fs/f2fs/acl.h
+index 80f4306..82af1f7 100644
+--- a/fs/f2fs/acl.h
++++ b/fs/f2fs/acl.h
+@@ -36,12 +36,11 @@ struct f2fs_acl_header {
+ 
+ #ifdef CONFIG_F2FS_FS_POSIX_ACL
+ 
+-extern struct posix_acl *f2fs_get_acl(struct inode *inode, int type);
++extern int f2fs_check_acl(struct inode *inode, int mask);
+ extern int f2fs_acl_chmod(struct inode *inode);
+ extern int f2fs_init_acl(struct inode *inode, struct inode *dir);
+ #else
+ #define f2fs_check_acl	NULL
+-#define f2fs_get_acl	NULL
+ #define f2fs_set_acl	NULL
+ 
+ static inline int f2fs_acl_chmod(struct inode *inode)
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index f412378..8ec0d36 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -372,7 +372,7 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
+ const struct inode_operations f2fs_file_inode_operations = {
+ 	.getattr	= f2fs_getattr,
+ 	.setattr	= f2fs_setattr,
+-	.get_acl	= f2fs_get_acl,
++	.check_acl	= f2fs_check_acl,
+ #ifdef CONFIG_F2FS_FS_XATTR
+ 	.setxattr	= generic_setxattr,
+ 	.getxattr	= generic_getxattr,
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 1c14771..50c7a01 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -507,7 +507,7 @@ const struct inode_operations f2fs_dir_inode_operations = {
+ 	.mknod		= f2fs_mknod,
+ 	.rename		= f2fs_rename,
+ 	.setattr	= f2fs_setattr,
+-	.get_acl	= f2fs_get_acl,
++	.check_acl	= f2fs_check_acl,
+ #ifdef CONFIG_F2FS_FS_XATTR
+ 	.setxattr	= generic_setxattr,
+ 	.getxattr	= generic_getxattr,
+@@ -531,7 +531,7 @@ const struct inode_operations f2fs_symlink_inode_operations = {
+ 
+ const struct inode_operations f2fs_special_inode_operations = {
+ 	.setattr        = f2fs_setattr,
+-	.get_acl	= f2fs_get_acl,
++	.check_acl	= f2fs_check_acl,
+ #ifdef CONFIG_F2FS_FS_XATTR
+ 	.setxattr       = generic_setxattr,
+ 	.getxattr       = generic_getxattr,
+-- 
+1.8.2.1.422.gdcd8c09
+

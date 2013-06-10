@@ -1,0 +1,42 @@
+From 5f3fa6643792f6377dfd613c80708512f3f1bd0f Mon Sep 17 00:00:00 2001
+From: Miklos Szeredi <mszeredi@suse.cz>
+Date: Fri, 28 Oct 2011 14:13:29 +0200
+Subject: [PATCH] filesystems: add set_nlink()
+
+Replace remaining direct i_nlink updates with a new set_nlink()
+updater function.
+
+Signed-off-by: Miklos Szeredi <mszeredi@suse.cz>
+Tested-by: Toshiyuki Okajima <toshi.okajima@jp.fujitsu.com>
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+---
+ include/linux/fs.h | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 69cbf59..76438367 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -1721,6 +1721,19 @@ static inline void mark_inode_dirty_sync(struct inode *inode)
+ }
+ 
+ /**
++ * set_nlink - directly set an inode's link count
++ * @inode: inode
++ * @nlink: new nlink (should be non-zero)
++ *
++ * This is a low-level filesystem helper to replace any
++ * direct filesystem manipulation of i_nlink.
++ */
++static inline void set_nlink(struct inode *inode, unsigned int nlink)
++{
++	inode->i_nlink = nlink;
++}
++
++/**
+  * inc_nlink - directly increment an inode's link count
+  * @inode: inode
+  *
+-- 
+1.8.2.1.422.gdcd8c09
+

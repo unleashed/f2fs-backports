@@ -1,0 +1,60 @@
+From 6fb56dd65bf2ebafff04d953efc6fa4fe47f5f2b Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@zeniv.linux.org.uk>
+Date: Sat, 23 Jul 2011 00:18:02 -0400
+Subject: [PATCH] kill boilerplate around posix_acl_chmod_masq()
+
+new helper: posix_acl_chmod(&acl, gfp, mode).  Replaces acl with modified
+clone or with NULL if that has failed; returns 0 or -ve on error.  All
+callers of posix_acl_chmod_masq() switched to that - they'd been doing
+exactly the same thing.
+
+[alex: trimmed down to cover only posix_acl.{c,h} for 3.0]
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Alejandro Martinez Ruiz <alex@flawedcode.org>
+---
+ fs/posix_acl.c            | 18 ++++++++++++++++++
+ include/linux/posix_acl.h |  1 +
+ 2 files changed, 19 insertions(+)
+
+diff --git a/fs/posix_acl.c b/fs/posix_acl.c
+index b1cf6bf..0aa9f16 100644
+--- a/fs/posix_acl.c
++++ b/fs/posix_acl.c
+@@ -386,3 +386,21 @@ posix_acl_chmod_masq(struct posix_acl *acl, mode_t mode)
+ 
+ 	return 0;
+ }
++
++int
++posix_acl_chmod(struct posix_acl **acl, gfp_t gfp, mode_t mode)
++{
++	struct posix_acl *clone = posix_acl_clone(*acl, gfp);
++	int err = -ENOMEM;
++	if (clone) {
++		err = posix_acl_chmod_masq(clone, mode);
++		if (err) {
++			posix_acl_release(clone);
++			clone = NULL;
++		}
++	}
++	posix_acl_release(*acl);
++	*acl = clone;
++	return err;
++}
++EXPORT_SYMBOL(posix_acl_chmod);
+diff --git a/include/linux/posix_acl.h b/include/linux/posix_acl.h
+index 54211c1..7a74d37 100644
+--- a/include/linux/posix_acl.h
++++ b/include/linux/posix_acl.h
+@@ -80,6 +80,7 @@ extern struct posix_acl *posix_acl_from_mode(mode_t, gfp_t);
+ extern int posix_acl_equiv_mode(const struct posix_acl *, mode_t *);
+ extern int posix_acl_create_masq(struct posix_acl *, mode_t *);
+ extern int posix_acl_chmod_masq(struct posix_acl *, mode_t);
++extern int posix_acl_chmod(struct posix_acl **, gfp_t, mode_t);
+ 
+ extern struct posix_acl *get_posix_acl(struct inode *, int);
+ extern int set_posix_acl(struct inode *, int, struct posix_acl *);
+-- 
+1.8.2.1.422.gdcd8c09
+

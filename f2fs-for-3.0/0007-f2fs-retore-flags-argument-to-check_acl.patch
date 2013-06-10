@@ -1,0 +1,43 @@
+From 986111d28679752a0ad3c12fe3360e8076d6f984 Mon Sep 17 00:00:00 2001
+From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+Date: Mon, 10 Jun 2013 14:19:06 +0200
+Subject: [PATCH] f2fs: retore flags argument to ->check_acl()
+
+This basically reverts upstream commit 7e40145 ->permission()
+sanitizing: don't pass flags to ->check_acl().
+
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ fs/f2fs/acl.c | 2 +-
+ fs/f2fs/acl.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
+index f070935..0ae210e 100644
+--- a/fs/f2fs/acl.c
++++ b/fs/f2fs/acl.c
+@@ -189,7 +189,7 @@ static struct posix_acl *f2fs_get_acl(struct inode *inode, int type)
+ 	return acl;
+ }
+ 
+-int f2fs_check_acl(struct inode *inode, int mask)
++int f2fs_check_acl(struct inode *inode, int mask, unsigned int flags)
+ {
+ 	int error = -EAGAIN;
+ 
+diff --git a/fs/f2fs/acl.h b/fs/f2fs/acl.h
+index 82af1f7..4cf324b 100644
+--- a/fs/f2fs/acl.h
++++ b/fs/f2fs/acl.h
+@@ -36,7 +36,7 @@ struct f2fs_acl_header {
+ 
+ #ifdef CONFIG_F2FS_FS_POSIX_ACL
+ 
+-extern int f2fs_check_acl(struct inode *inode, int mask);
++extern int f2fs_check_acl(struct inode *inode, int mask, unsigned int flags);
+ extern int f2fs_acl_chmod(struct inode *inode);
+ extern int f2fs_init_acl(struct inode *inode, struct inode *dir);
+ #else
+-- 
+1.8.2.1.422.gdcd8c09
+
