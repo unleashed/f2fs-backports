@@ -1,0 +1,49 @@
+From 92f824abb85a37917638b54f0b9ad2d77434900d Mon Sep 17 00:00:00 2001
+From: Namjae Jeon <namjae.jeon@samsung.com>
+Date: Sat, 8 Jun 2013 21:25:40 +0900
+Subject: [PATCH] f2fs: optimise the truncate_data_blocks_range() range
+
+The function truncate_data_blocks_range() decrements the valid
+block count of inode via dec_valid_block_count(). Since this
+function updates the i_blocks field of inode, we can update this
+field once we have calculated total the number of blocks
+to be freed.
+
+Therefore we can decrement valid blocks outside of the for loop.
+
+	if (nr_free) {
++		dec_valid_block_count(sbi, dn->inode, nr_free);
+ 		set_page_dirty(dn->node_page);
+ 		sync_inode_page(dn);
+ 	}
+
+'nr_free' tells the total number of blocks freed. So, we can
+just directly pass this value to dec_valid_block_count() and update
+the i_blocks.
+
+Signed-off-by: Namjae Jeon <namjae.jeon@samsung.com>
+Signed-off-by: Pankaj Kumar <pankaj.km@samsung.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/file.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index 85b665d..2f649b8 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -185,10 +185,10 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
+ 
+ 		update_extent_cache(NULL_ADDR, dn);
+ 		invalidate_blocks(sbi, blkaddr);
+-		dec_valid_block_count(sbi, dn->inode, 1);
+ 		nr_free++;
+ 	}
+ 	if (nr_free) {
++		dec_valid_block_count(sbi, dn->inode, nr_free);
+ 		set_page_dirty(dn->node_page);
+ 		sync_inode_page(dn);
+ 	}
+-- 
+1.8.2.1.422.gdcd8c09
+

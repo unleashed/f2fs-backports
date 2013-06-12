@@ -1,0 +1,103 @@
+From 699489bbbea4fc3b9b735d69941cf4fca91ce1d5 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 7 Jun 2013 22:08:23 +0900
+Subject: [PATCH] f2fs: sync dir->i_size with its block allocation
+
+If new dentry block is allocated and its i_size is updated, we should update
+its inode block together in order to sync i_size and its block allocation.
+Otherwise, we can loose additional dentry block due to the unconsistent i_size.
+
+Errorneous Scenario
+-------------------
+
+In the recovery routine,
+ - recovery_dentry
+ | - __f2fs_add_link
+ | | - get_new_data_page
+ | | | - i_size_write(new_i_size)
+ | | | - mark_inode_dirty_sync(dir)
+ | | - update_parent_metadata
+ | | | - mark_inode_dirty(dir)
+ |
+ - write_checkpoint
+   - sync_dirty_dir_inodes
+     - filemap_flush(dentry_blocks)
+       - f2fs_write_data_page
+         - skip to write the last dentry block due to index < i_size
+
+In the above flow, new_i_size is not updated to its inode block so that the
+last dentry block will be lost accordingly.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c | 2 ++
+ fs/f2fs/dir.c  | 9 ++++-----
+ fs/f2fs/f2fs.h | 1 +
+ 3 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 93917e3..5b145fc 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -339,6 +339,8 @@ repeat:
+ 	if (new_i_size &&
+ 		i_size_read(inode) < ((index + 1) << PAGE_CACHE_SHIFT)) {
+ 		i_size_write(inode, ((index + 1) << PAGE_CACHE_SHIFT));
++		/* Only the directory inode sets new_i_size */
++		set_inode_flag(F2FS_I(inode), FI_UPDATE_DIR);
+ 		mark_inode_dirty_sync(inode);
+ 	}
+ 	return page;
+diff --git a/fs/f2fs/dir.c b/fs/f2fs/dir.c
+index eaea5b5..69ca049 100644
+--- a/fs/f2fs/dir.c
++++ b/fs/f2fs/dir.c
+@@ -370,22 +370,20 @@ error:
+ static void update_parent_metadata(struct inode *dir, struct inode *inode,
+ 						unsigned int current_depth)
+ {
+-	bool need_dir_update = false;
+-
+ 	if (is_inode_flag_set(F2FS_I(inode), FI_NEW_INODE)) {
+ 		if (S_ISDIR(inode->i_mode)) {
+ 			inc_nlink(dir);
+-			need_dir_update = true;
++			set_inode_flag(F2FS_I(dir), FI_UPDATE_DIR);
+ 		}
+ 		clear_inode_flag(F2FS_I(inode), FI_NEW_INODE);
+ 	}
+ 	dir->i_mtime = dir->i_ctime = CURRENT_TIME;
+ 	if (F2FS_I(dir)->i_current_depth != current_depth) {
+ 		F2FS_I(dir)->i_current_depth = current_depth;
+-		need_dir_update = true;
++		set_inode_flag(F2FS_I(dir), FI_UPDATE_DIR);
+ 	}
+ 
+-	if (need_dir_update)
++	if (is_inode_flag_set(F2FS_I(dir), FI_UPDATE_DIR))
+ 		update_inode_page(dir);
+ 	else
+ 		mark_inode_dirty(dir);
+@@ -502,6 +500,7 @@ add_dentry:
+ 
+ 	update_parent_metadata(dir, inode, current_depth);
+ fail:
++	clear_inode_flag(F2FS_I(dir), FI_UPDATE_DIR);
+ 	kunmap(dentry_page);
+ 	f2fs_put_page(dentry_page, 1);
+ 	return err;
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index c344a4d..27edf59 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -859,6 +859,7 @@ enum {
+ 	FI_INC_LINK,		/* need to increment i_nlink */
+ 	FI_ACL_MODE,		/* indicate acl mode */
+ 	FI_NO_ALLOC,		/* should not allocate any blocks */
++	FI_UPDATE_DIR,		/* should update inode block for consistency */
+ 	FI_DELAY_IPUT,		/* used for the recovery */
+ };
+ 
+-- 
+1.8.2.1.422.gdcd8c09
+

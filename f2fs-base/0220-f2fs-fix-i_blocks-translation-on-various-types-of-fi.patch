@@ -1,0 +1,76 @@
+From 2d4d9fb591fe83d9f0559afaa9736ebc8edad0aa Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Fri, 7 Jun 2013 16:33:07 +0900
+Subject: [PATCH] f2fs: fix i_blocks translation on various types of files
+
+Basically an inode manages the number of allocated blocks with inode->i_blocks
+which is represented in a unit of sectors, not file system blocks.
+But, f2fs has used i_blocks in a unit of file system blocks, and f2fs_getattr
+translates it to the number of sectors when fstat is called.
+
+However, previously f2fs_file_inode_operations only has this, so this patch adds
+it to all the types of inode_operations.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h  | 1 +
+ fs/f2fs/file.c  | 2 +-
+ fs/f2fs/namei.c | 3 +++
+ 3 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 4f2c209..c344a4d 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -903,6 +903,7 @@ static inline int f2fs_readonly(struct super_block *sb)
+ int f2fs_sync_file(struct file *, loff_t, loff_t, int);
+ void truncate_data_blocks(struct dnode_of_data *);
+ void f2fs_truncate(struct inode *);
++int f2fs_getattr(struct vfsmount *, struct dentry *, struct kstat *);
+ int f2fs_setattr(struct dentry *, struct iattr *);
+ int truncate_hole(struct inode *, pgoff_t, pgoff_t);
+ int truncate_data_blocks_range(struct dnode_of_data *, int);
+diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
+index deefd25..8d2fce9 100644
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@ -291,7 +291,7 @@ void f2fs_truncate(struct inode *inode)
+ 	}
+ }
+ 
+-static int f2fs_getattr(struct vfsmount *mnt,
++int f2fs_getattr(struct vfsmount *mnt,
+ 			 struct dentry *dentry, struct kstat *stat)
+ {
+ 	struct inode *inode = dentry->d_inode;
+diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
+index 1fe1502..810444e 100644
+--- a/fs/f2fs/namei.c
++++ b/fs/f2fs/namei.c
+@@ -490,6 +490,7 @@ const struct inode_operations f2fs_dir_inode_operations = {
+ 	.rmdir		= f2fs_rmdir,
+ 	.mknod		= f2fs_mknod,
+ 	.rename		= f2fs_rename,
++	.getattr	= f2fs_getattr,
+ 	.setattr	= f2fs_setattr,
+ 	.get_acl	= f2fs_get_acl,
+ #ifdef CONFIG_F2FS_FS_XATTR
+@@ -504,6 +505,7 @@ const struct inode_operations f2fs_symlink_inode_operations = {
+ 	.readlink       = generic_readlink,
+ 	.follow_link    = page_follow_link_light,
+ 	.put_link       = page_put_link,
++	.getattr	= f2fs_getattr,
+ 	.setattr	= f2fs_setattr,
+ #ifdef CONFIG_F2FS_FS_XATTR
+ 	.setxattr	= generic_setxattr,
+@@ -514,6 +516,7 @@ const struct inode_operations f2fs_symlink_inode_operations = {
+ };
+ 
+ const struct inode_operations f2fs_special_inode_operations = {
++	.getattr	= f2fs_getattr,
+ 	.setattr        = f2fs_setattr,
+ 	.get_acl	= f2fs_get_acl,
+ #ifdef CONFIG_F2FS_FS_XATTR
+-- 
+1.8.2.1.422.gdcd8c09
+
