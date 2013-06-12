@@ -1,4 +1,4 @@
-From f5fbf38df12277003345ce9970b4f94c02a78446 Mon Sep 17 00:00:00 2001
+From 84a49f9d7831c74c2466f34a0045d214c1ba9726 Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Mon, 10 Jun 2013 13:04:46 +0200
 Subject: [PATCH] f2fs: provide ->check_acl() handler instead of ->get_acl()
@@ -18,7 +18,7 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  4 files changed, 21 insertions(+), 6 deletions(-)
 
 diff --git a/fs/f2fs/acl.c b/fs/f2fs/acl.c
-index c1ea883..d1d4e41 100644
+index fe8d04f..c9b7111 100644
 --- a/fs/f2fs/acl.c
 +++ b/fs/f2fs/acl.c
 @@ -149,7 +149,7 @@ fail:
@@ -72,10 +72,10 @@ index 80f4306..82af1f7 100644
  
  static inline int f2fs_acl_chmod(struct inode *inode)
 diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
-index f412378..8ec0d36 100644
+index 1142827..a17a5cd 100644
 --- a/fs/f2fs/file.c
 +++ b/fs/f2fs/file.c
-@@ -372,7 +372,7 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
+@@ -373,7 +373,7 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
  const struct inode_operations f2fs_file_inode_operations = {
  	.getattr	= f2fs_getattr,
  	.setattr	= f2fs_setattr,
@@ -85,21 +85,21 @@ index f412378..8ec0d36 100644
  	.setxattr	= generic_setxattr,
  	.getxattr	= generic_getxattr,
 diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
-index 1c14771..50c7a01 100644
+index 630787a..ff92219 100644
 --- a/fs/f2fs/namei.c
 +++ b/fs/f2fs/namei.c
-@@ -507,7 +507,7 @@ const struct inode_operations f2fs_dir_inode_operations = {
- 	.mknod		= f2fs_mknod,
+@@ -508,7 +508,7 @@ const struct inode_operations f2fs_dir_inode_operations = {
  	.rename		= f2fs_rename,
+ 	.getattr	= f2fs_getattr,
  	.setattr	= f2fs_setattr,
 -	.get_acl	= f2fs_get_acl,
 +	.check_acl	= f2fs_check_acl,
  #ifdef CONFIG_F2FS_FS_XATTR
  	.setxattr	= generic_setxattr,
  	.getxattr	= generic_getxattr,
-@@ -531,7 +531,7 @@ const struct inode_operations f2fs_symlink_inode_operations = {
- 
+@@ -534,7 +534,7 @@ const struct inode_operations f2fs_symlink_inode_operations = {
  const struct inode_operations f2fs_special_inode_operations = {
+ 	.getattr	= f2fs_getattr,
  	.setattr        = f2fs_setattr,
 -	.get_acl	= f2fs_get_acl,
 +	.check_acl	= f2fs_check_acl,

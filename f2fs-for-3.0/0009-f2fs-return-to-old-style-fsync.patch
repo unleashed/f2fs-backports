@@ -1,4 +1,4 @@
-From 443d7620ce9cef3af1a6fd269e69dfc86137e0ee Mon Sep 17 00:00:00 2001
+From caa0ed47e3ae753d7ee3c12637f9aae128cda64c Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Mon, 10 Jun 2013 12:37:13 +0200
 Subject: [PATCH] f2fs: return to old style ->fsync()
@@ -17,10 +17,10 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  2 files changed, 2 insertions(+), 10 deletions(-)
 
 diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
-index 40b137a..350c4d2 100644
+index a05aa65..7ba2a8d 100644
 --- a/fs/f2fs/f2fs.h
 +++ b/fs/f2fs/f2fs.h
-@@ -900,7 +900,7 @@ static inline int f2fs_readonly(struct super_block *sb)
+@@ -902,7 +902,7 @@ static inline int f2fs_readonly(struct super_block *sb)
  /*
   * file.c
   */
@@ -28,9 +28,9 @@ index 40b137a..350c4d2 100644
 +int f2fs_sync_file(struct file *, int);
  void truncate_data_blocks(struct dnode_of_data *);
  void f2fs_truncate(struct inode *);
- int f2fs_setattr(struct dentry *, struct iattr *);
+ int f2fs_getattr(struct vfsmount *, struct dentry *, struct kstat *);
 diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
-index 8ec0d36..1dd6698 100644
+index a17a5cd..4ef72cb 100644
 --- a/fs/f2fs/file.c
 +++ b/fs/f2fs/file.c
 @@ -109,7 +109,7 @@ static const struct vm_operations_struct f2fs_file_vm_ops = {
@@ -60,7 +60,7 @@ index 8ec0d36..1dd6698 100644
  	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
  		goto out;
  
-@@ -163,7 +156,6 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -164,7 +157,6 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  		ret = blkdev_issue_flush(inode->i_sb->s_bdev, GFP_KERNEL, NULL);
  	}
  out:
