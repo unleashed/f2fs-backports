@@ -1,0 +1,165 @@
+From d4627e8ebb19a00256b4055d12e15757ddf65455 Mon Sep 17 00:00:00 2001
+From: Mimi Zohar <zohar@linux.vnet.ibm.com>
+Date: Mon, 6 Jun 2011 15:29:25 -0400
+Subject: [PATCH] security: new security_inode_init_security API adds function
+ callback
+
+This patch changes the security_inode_init_security API by adding a
+filesystem specific callback to write security extended attributes.
+This change is in preparation for supporting the initialization of
+multiple LSM xattrs and the EVM xattr.  Initially the callback function
+walks an array of xattrs, writing each xattr separately, but could be
+optimized to write multiple xattrs at once.
+
+For existing security_inode_init_security() calls, which have not yet
+been converted to use the new callback function, such as those in
+reiserfs and ocfs2, this patch defines security_old_inode_init_security().
+
+[alex: instead of renaming old prototype, just rename new one]
+[alex: include further fixups to the original commit in this same patch]
+
+Signed-off-by: Mimi Zohar <zohar@us.ibm.com>
+Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
+---
+ include/linux/security.h | 23 ++++++++++++++++++++---
+ include/linux/xattr.h    |  6 ++++++
+ security/security.c      | 37 +++++++++++++++++++++++++++++++++++--
+ 3 files changed, 61 insertions(+), 5 deletions(-)
+
+diff --git a/include/linux/security.h b/include/linux/security.h
+index 8ce59ef..e04bbd8 100644
+--- a/include/linux/security.h
++++ b/include/linux/security.h
+@@ -36,6 +36,7 @@
+ #include <linux/key.h>
+ #include <linux/xfrm.h>
+ #include <linux/slab.h>
++#include <linux/xattr.h>
+ #include <net/flow.h>
+ 
+ /* Maximum number of letters for an LSM name string */
+@@ -147,6 +148,10 @@ extern int mmap_min_addr_handler(struct ctl_table *table, int write,
+ 				 void __user *buffer, size_t *lenp, loff_t *ppos);
+ #endif
+ 
++/* security_inode_init_security callback function to write xattrs */
++typedef int (*initxattrs) (struct inode *inode,
++			   const struct xattr *xattr_array, void *fs_data);
++
+ #ifdef CONFIG_SECURITY
+ 
+ struct security_mnt_opts {
+@@ -1704,8 +1709,11 @@ int security_sb_parse_opts_str(char *options, struct security_mnt_opts *opts);
+ int security_inode_alloc(struct inode *inode);
+ void security_inode_free(struct inode *inode);
+ int security_inode_init_security(struct inode *inode, struct inode *dir,
+-				 const struct qstr *qstr, char **name,
+-				 void **value, size_t *len);
++				const struct qstr *qstr, char **name,
++				void **value, size_t *len);
++int security_new_inode_init_security(struct inode *inode, struct inode *dir,
++				 const struct qstr *qstr,
++				 initxattrs initxattrs, void *fs_data);
+ int security_inode_create(struct inode *dir, struct dentry *dentry, int mode);
+ int security_inode_link(struct dentry *old_dentry, struct inode *dir,
+ 			 struct dentry *new_dentry);
+@@ -2039,7 +2047,16 @@ static inline int security_inode_init_security(struct inode *inode,
+ 						void **value,
+ 						size_t *len)
+ {
+-	return -EOPNOTSUPP;
++       return 0;
++}
++
++static inline int security_new_inode_init_security(struct inode *inode,
++						struct inode *dir,
++						const struct qstr *qstr,
++						initxattrs initxattrs,
++						void *fs_data)
++{
++	return 0;
+ }
+ 
+ static inline int security_inode_create(struct inode *dir,
+diff --git a/include/linux/xattr.h b/include/linux/xattr.h
+index aed54c5..7a37866 100644
+--- a/include/linux/xattr.h
++++ b/include/linux/xattr.h
+@@ -67,6 +67,12 @@ struct xattr_handler {
+ 		   size_t size, int flags, int handler_flags);
+ };
+ 
++struct xattr {
++	char *name;
++	void *value;
++	size_t value_len;
++};
++
+ ssize_t xattr_getsecurity(struct inode *, const char *, void *, size_t);
+ ssize_t vfs_getxattr(struct dentry *, const char *, void *, size_t);
+ ssize_t vfs_listxattr(struct dentry *d, char *list, size_t size);
+diff --git a/security/security.c b/security/security.c
+index 4ba6d4c..c636aa8 100644
+--- a/security/security.c
++++ b/security/security.c
+@@ -18,6 +18,8 @@
+ #include <linux/security.h>
+ #include <linux/ima.h>
+ 
++#define MAX_LSM_XATTR	1
++
+ /* Boot-time LSM user choice */
+ static __initdata char chosen_lsm[SECURITY_NAME_MAX + 1] =
+ 	CONFIG_DEFAULT_SECURITY;
+@@ -339,8 +341,8 @@ void security_inode_free(struct inode *inode)
+ }
+ 
+ int security_inode_init_security(struct inode *inode, struct inode *dir,
+-				 const struct qstr *qstr, char **name,
+-				 void **value, size_t *len)
++				     const struct qstr *qstr, char **name,
++				     void **value, size_t *len)
+ {
+ 	if (unlikely(IS_PRIVATE(inode)))
+ 		return -EOPNOTSUPP;
+@@ -349,6 +351,37 @@ int security_inode_init_security(struct inode *inode, struct inode *dir,
+ }
+ EXPORT_SYMBOL(security_inode_init_security);
+ 
++int security_new_inode_init_security(struct inode *inode, struct inode *dir,
++					const struct qstr *qstr,
++					const initxattrs initxattrs, void *fs_data)
++{
++	struct xattr new_xattrs[MAX_LSM_XATTR + 1];
++	struct xattr *lsm_xattr;
++	int ret;
++
++	if (unlikely(IS_PRIVATE(inode)))
++		return -EOPNOTSUPP;
++
++	memset(new_xattrs, 0, sizeof new_xattrs);
++	if (!initxattrs)
++		return security_ops->inode_init_security(inode, dir, qstr,
++							 NULL, NULL, NULL);
++	lsm_xattr = new_xattrs;
++	ret = security_ops->inode_init_security(inode, dir, qstr,
++						&lsm_xattr->name,
++						&lsm_xattr->value,
++						&lsm_xattr->value_len);
++	if (ret)
++		goto out;
++	ret = initxattrs(inode, new_xattrs, fs_data);
++out:
++	kfree(lsm_xattr->name);
++	kfree(lsm_xattr->value);
++
++	return (ret == -EOPNOTSUPP) ? 0 : ret;
++}
++EXPORT_SYMBOL(security_new_inode_init_security);
++
+ #ifdef CONFIG_SECURITY_PATH
+ int security_path_mknod(struct path *dir, struct dentry *dentry, int mode,
+ 			unsigned int dev)
+-- 
+1.8.2.1.422.gdcd8c09
+
