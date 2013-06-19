@@ -1,18 +1,18 @@
-From acfbe41f9e8001de7208b142255346063127cd62 Mon Sep 17 00:00:00 2001
+From 6f8c04b0f49e8faeeacc009cfc54f16ad1ab86ac Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Fri, 25 Jan 2013 17:38:55 +0100
 Subject: [PATCH] f2fs: change the prototype for show_options
 
 Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 ---
- fs/f2fs/super.c | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ fs/f2fs/super.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
-index 609fc42..72fd48a 100644
+index 609fc42..ddf7773 100644
 --- a/fs/f2fs/super.c
 +++ b/fs/f2fs/super.c
-@@ -290,9 +290,9 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
+@@ -290,11 +290,11 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
  	return 0;
  }
  
@@ -22,8 +22,11 @@ index 609fc42..72fd48a 100644
 -	struct f2fs_sb_info *sbi = F2FS_SB(root->d_sb);
 +	struct f2fs_sb_info *sbi = F2FS_SB(vfs->mnt_sb);
  
- 	if (!(root->d_sb->s_flags & MS_RDONLY) && test_opt(sbi, BG_GC))
+-	if (!(root->d_sb->s_flags & MS_RDONLY) && test_opt(sbi, BG_GC))
++	if (!(vfs->mnt_sb->s_flags & MS_RDONLY) && test_opt(sbi, BG_GC))
  		seq_printf(seq, ",background_gc=%s", "on");
+ 	else
+ 		seq_printf(seq, ",background_gc=%s", "off");
 -- 
 1.8.2.1.422.gdcd8c09
 
