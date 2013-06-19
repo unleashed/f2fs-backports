@@ -1,0 +1,42 @@
+From 8d8451af6875f8841dc20987d1363405020a9172 Mon Sep 17 00:00:00 2001
+From: Haicheng Li <haicheng.li@linux.intel.com>
+Date: Thu, 13 Jun 2013 16:59:28 +0800
+Subject: [PATCH] f2fs: make locate_dirty_segment() as static
+
+It's used only locally and could be static.
+
+Signed-off-by: Haicheng Li <haicheng.li@linux.intel.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/f2fs.h    | 1 -
+ fs/f2fs/segment.c | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index a05aa65..3e7cb33 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -996,7 +996,6 @@ void destroy_node_manager_caches(void);
+  */
+ void f2fs_balance_fs(struct f2fs_sb_info *);
+ void invalidate_blocks(struct f2fs_sb_info *, block_t);
+-void locate_dirty_segment(struct f2fs_sb_info *, unsigned int);
+ void clear_prefree_segments(struct f2fs_sb_info *);
+ int npages_for_summary_flush(struct f2fs_sb_info *);
+ void allocate_new_segments(struct f2fs_sb_info *);
+diff --git a/fs/f2fs/segment.c b/fs/f2fs/segment.c
+index 77f31c0..b15debc 100644
+--- a/fs/f2fs/segment.c
++++ b/fs/f2fs/segment.c
+@@ -94,7 +94,7 @@ static void __remove_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno,
+  * Adding dirty entry into seglist is not critical operation.
+  * If a given segment is one of current working segments, it won't be added.
+  */
+-void locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno)
++static void locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno)
+ {
+ 	struct dirty_seglist_info *dirty_i = DIRTY_I(sbi);
+ 	unsigned short valid_blocks;
+-- 
+1.8.2.1.422.gdcd8c09
+
