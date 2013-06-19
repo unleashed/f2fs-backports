@@ -1,4 +1,4 @@
-From 6505a8c53c1da5f4e73221242dcfc269ebe19b27 Mon Sep 17 00:00:00 2001
+From 7f7753d142846faf42aa6bd5258a3050990e66ab Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Fri, 25 Jan 2013 17:35:02 +0100
 Subject: [PATCH] f2fs: fix namei prototypes for 3.2 kernels
@@ -9,7 +9,7 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
-index f4c09d9..29dbfed 100644
+index d3f2b57..9d12311 100644
 --- a/fs/f2fs/namei.c
 +++ b/fs/f2fs/namei.c
 @@ -118,7 +118,7 @@ static inline void set_cold_files(struct f2fs_sb_info *sbi, struct inode *inode,
@@ -21,7 +21,7 @@ index f4c09d9..29dbfed 100644
  						struct nameidata *nd)
  {
  	struct super_block *sb = dir->i_sb;
-@@ -304,7 +304,7 @@ out:
+@@ -296,7 +296,7 @@ out:
  	return err;
  }
  
@@ -30,7 +30,7 @@ index f4c09d9..29dbfed 100644
  {
  	struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
  	struct inode *inode;
-@@ -354,7 +354,7 @@ static int f2fs_rmdir(struct inode *dir, struct dentry *dentry)
+@@ -346,7 +346,7 @@ static int f2fs_rmdir(struct inode *dir, struct dentry *dentry)
  }
  
  static int f2fs_mknod(struct inode *dir, struct dentry *dentry,

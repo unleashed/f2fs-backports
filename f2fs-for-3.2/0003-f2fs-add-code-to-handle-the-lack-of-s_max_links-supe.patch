@@ -1,4 +1,4 @@
-From 8c05f9237a34a9683a98269a5017ed56e2a1c7d3 Mon Sep 17 00:00:00 2001
+From 4676913cfba9d7dc2b345555238c9ec4eb6bdd45 Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Fri, 25 Jan 2013 17:36:55 +0100
 Subject: [PATCH] f2fs: add code to handle the lack of s_max_links superblock
@@ -11,10 +11,10 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  2 files changed, 19 insertions(+), 4 deletions(-)
 
 diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
-index 29dbfed..b3d5838 100644
+index 9d12311..fb67fd3 100644
 --- a/fs/f2fs/namei.c
 +++ b/fs/f2fs/namei.c
-@@ -166,10 +166,16 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
+@@ -165,10 +165,16 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
  		struct dentry *dentry)
  {
  	struct inode *inode = old_dentry->d_inode;
@@ -33,7 +33,7 @@ index 29dbfed..b3d5838 100644
  	f2fs_balance_fs(sbi);
  
  	inode->i_ctime = CURRENT_TIME;
-@@ -306,10 +312,14 @@ out:
+@@ -298,10 +304,14 @@ out:
  
  static int f2fs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
  {
@@ -49,7 +49,7 @@ index 29dbfed..b3d5838 100644
  	f2fs_balance_fs(sbi);
  
  	inode = f2fs_new_inode(dir, S_IFDIR | mode);
-@@ -445,6 +455,12 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
+@@ -437,6 +447,12 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
  			add_orphan_inode(sbi, new_inode->i_ino);
  		update_inode_page(new_inode);
  	} else {
@@ -63,10 +63,10 @@ index 29dbfed..b3d5838 100644
  		if (err)
  			goto out_dir;
 diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
-index a5595e7..970fd8f 100644
+index e83f05c..609fc42 100644
 --- a/fs/f2fs/super.c
 +++ b/fs/f2fs/super.c
-@@ -540,7 +540,6 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
+@@ -618,7 +618,6 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
  		goto free_sb_buf;
  
  	sb->s_maxbytes = max_file_size(le32_to_cpu(raw_super->log_blocksize));

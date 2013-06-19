@@ -1,4 +1,4 @@
-From 15bb0354b9e63b069e73da90edfb7dae1d9cc9ff Mon Sep 17 00:00:00 2001
+From 0a522d91541f12c076fa4b22234b19021671b3c5 Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Mon, 13 May 2013 18:10:29 +0200
 Subject: [PATCH] Revert "f2fs: use mnt_want_write_file() in ioctl"
@@ -13,10 +13,10 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
-index 207b180..8a6922e 100644
+index c693ff8..d7637d6 100644
 --- a/fs/f2fs/file.c
 +++ b/fs/f2fs/file.c
-@@ -589,7 +589,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+@@ -620,7 +620,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  	{
  		unsigned int oldflags;
  
@@ -25,7 +25,7 @@ index 207b180..8a6922e 100644
  		if (ret)
  			return ret;
  
-@@ -626,7 +626,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+@@ -657,7 +657,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
  		inode->i_ctime = CURRENT_TIME;
  		mark_inode_dirty(inode);
  out:

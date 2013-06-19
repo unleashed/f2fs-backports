@@ -1,4 +1,4 @@
-From 98f12e1d9cef89f126d57bdd464b152865f7db78 Mon Sep 17 00:00:00 2001
+From b4f5f0fc55e1af00ac4a2c4e3cc4e73597a60781 Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Thu, 24 Jan 2013 21:02:14 +0100
 Subject: [PATCH] f2fs: backport QSTR_INIT in namei
@@ -11,10 +11,10 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
-index 3807949..f4c09d9 100644
+index 8c7b0f9..d3f2b57 100644
 --- a/fs/f2fs/namei.c
 +++ b/fs/f2fs/namei.c
-@@ -199,7 +199,7 @@ out:
+@@ -191,7 +191,7 @@ out:
  
  struct dentry *f2fs_get_parent(struct dentry *child)
  {
