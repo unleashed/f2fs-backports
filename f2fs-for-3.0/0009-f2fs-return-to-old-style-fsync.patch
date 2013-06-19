@@ -1,4 +1,4 @@
-From caa0ed47e3ae753d7ee3c12637f9aae128cda64c Mon Sep 17 00:00:00 2001
+From 6892c7610aba1002bcefd28fbc9b02c5ba1c5fce Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Mon, 10 Jun 2013 12:37:13 +0200
 Subject: [PATCH] f2fs: return to old style ->fsync()
@@ -17,7 +17,7 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  2 files changed, 2 insertions(+), 10 deletions(-)
 
 diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
-index a05aa65..7ba2a8d 100644
+index 863a5e91..9651eab 100644
 --- a/fs/f2fs/f2fs.h
 +++ b/fs/f2fs/f2fs.h
 @@ -902,7 +902,7 @@ static inline int f2fs_readonly(struct super_block *sb)
@@ -30,19 +30,19 @@ index a05aa65..7ba2a8d 100644
  void f2fs_truncate(struct inode *);
  int f2fs_getattr(struct vfsmount *, struct dentry *, struct kstat *);
 diff --git a/fs/f2fs/file.c b/fs/f2fs/file.c
-index a17a5cd..4ef72cb 100644
+index 7eab9dc..d2047b0 100644
 --- a/fs/f2fs/file.c
 +++ b/fs/f2fs/file.c
-@@ -109,7 +109,7 @@ static const struct vm_operations_struct f2fs_file_vm_ops = {
- 	.page_mkwrite = f2fs_vm_page_mkwrite,
- };
+@@ -138,7 +138,7 @@ static int get_parent_ino(struct inode *inode, nid_t *pino)
+ 	return 1;
+ }
  
 -int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 +int f2fs_sync_file(struct file *file, int datasync)
  {
  	struct inode *inode = file->f_mapping->host;
  	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
-@@ -125,17 +125,10 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -154,17 +154,10 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  		return 0;
  
  	trace_f2fs_sync_file_enter(inode);
@@ -60,7 +60,7 @@ index a17a5cd..4ef72cb 100644
  	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
  		goto out;
  
-@@ -164,7 +157,6 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
+@@ -204,7 +197,6 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
  		ret = blkdev_issue_flush(inode->i_sb->s_bdev, GFP_KERNEL, NULL);
  	}
  out:
