@@ -1,4 +1,4 @@
-From bfb758e7593c13c2541735d239d8947a54101853 Mon Sep 17 00:00:00 2001
+From 0fe32ce1e598b286048f8a6c8d60f8393593fa40 Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@securiforest.com>
 Date: Fri, 25 Jan 2013 17:35:02 +0100
 Subject: [PATCH] f2fs: fix namei prototypes for 3.5 kernels
@@ -9,7 +9,7 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/fs/f2fs/namei.c b/fs/f2fs/namei.c
-index 47abc97..3807949 100644
+index 64c0716..8c7b0f9 100644
 --- a/fs/f2fs/namei.c
 +++ b/fs/f2fs/namei.c
 @@ -119,7 +119,7 @@ static inline void set_cold_files(struct f2fs_sb_info *sbi, struct inode *inode,
@@ -21,7 +21,7 @@ index 47abc97..3807949 100644
  {
  	struct super_block *sb = dir->i_sb;
  	struct f2fs_sb_info *sbi = F2FS_SB(sb);
-@@ -207,7 +207,7 @@ struct dentry *f2fs_get_parent(struct dentry *child)
+@@ -199,7 +199,7 @@ struct dentry *f2fs_get_parent(struct dentry *child)
  }
  
  static struct dentry *f2fs_lookup(struct inode *dir, struct dentry *dentry,

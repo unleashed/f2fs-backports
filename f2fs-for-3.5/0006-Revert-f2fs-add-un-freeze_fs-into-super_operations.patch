@@ -1,4 +1,4 @@
-From e4b1b1315b3312479f22690151d0792d0a970dd0 Mon Sep 17 00:00:00 2001
+From 7e6a3c9b497fc6523a0b319b6f7cf9653f34fbd5 Mon Sep 17 00:00:00 2001
 From: Alejandro Martinez Ruiz <alex@nowcomputing.com>
 Date: Tue, 29 Jan 2013 17:17:51 +0100
 Subject: [PATCH] Revert "f2fs: add un/freeze_fs into super_operations"
@@ -14,7 +14,7 @@ Signed-off-by: Alejandro Martinez Ruiz <alex@nowcomputing.com>
  3 files changed, 26 deletions(-)
 
 diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
-index ddc2c67..31b99ac 100644
+index 3a9df36..8bcd41e 100644
 --- a/fs/f2fs/gc.c
 +++ b/fs/f2fs/gc.c
 @@ -44,11 +44,6 @@ static int gc_thread_func(void *data)
@@ -30,10 +30,10 @@ index ddc2c67..31b99ac 100644
  		 * [GC triggering condition]
  		 * 0. GC is not conducted currently.
 diff --git a/fs/f2fs/inode.c b/fs/f2fs/inode.c
-index b44a4c1..c2f2e2f 100644
+index 2b2d45d1..57a293d 100644
 --- a/fs/f2fs/inode.c
 +++ b/fs/f2fs/inode.c
-@@ -251,7 +251,6 @@ void f2fs_evict_inode(struct inode *inode)
+@@ -255,7 +255,6 @@ void f2fs_evict_inode(struct inode *inode)
  	if (inode->i_nlink || is_bad_inode(inode))
  		goto no_delete;
  
@@ -41,7 +41,7 @@ index b44a4c1..c2f2e2f 100644
  	set_inode_flag(F2FS_I(inode), FI_NO_ALLOC);
  	i_size_write(inode, 0);
  
-@@ -261,8 +260,6 @@ void f2fs_evict_inode(struct inode *inode)
+@@ -265,8 +264,6 @@ void f2fs_evict_inode(struct inode *inode)
  	ilock = mutex_lock_op(sbi);
  	remove_inode_page(inode);
  	mutex_unlock_op(sbi, ilock);
@@ -51,10 +51,10 @@ index b44a4c1..c2f2e2f 100644
  	clear_inode(inode);
  }
 diff --git a/fs/f2fs/super.c b/fs/f2fs/super.c
-index 3ac305d..a5595e7 100644
+index 75c7dc3..e83f05c 100644
 --- a/fs/f2fs/super.c
 +++ b/fs/f2fs/super.c
-@@ -166,22 +166,6 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
+@@ -262,22 +262,6 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
  	return 0;
  }
  
@@ -77,15 +77,15 @@ index 3ac305d..a5595e7 100644
  static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
  {
  	struct super_block *sb = dentry->d_sb;
-@@ -253,8 +237,6 @@ static struct super_operations f2fs_sops = {
+@@ -402,8 +386,6 @@ static struct super_operations f2fs_sops = {
  	.evict_inode	= f2fs_evict_inode,
  	.put_super	= f2fs_put_super,
  	.sync_fs	= f2fs_sync_fs,
 -	.freeze_fs	= f2fs_freeze,
 -	.unfreeze_fs	= f2fs_unfreeze,
  	.statfs		= f2fs_statfs,
+ 	.remount_fs	= f2fs_remount,
  };
- 
 -- 
 1.8.2.1.422.gdcd8c09
 
