@@ -1,0 +1,56 @@
+From 5dfc2290ccfbebf335446209aa728082ba57b194 Mon Sep 17 00:00:00 2001
+From: Gu Zheng <guz.fnst@cn.fujitsu.com>
+Date: Thu, 20 Jun 2013 17:52:39 +0800
+Subject: [PATCH] f2fs: code cleanup and simplify in func {find/add}_gc_inode
+
+This patch simplifies list operations in find_gc_inode and add_gc_inode.
+Just simple code cleanup.
+
+Signed-off-by: Gu Zheng <guz.fnst@cn.fujitsu.com>
+[Jaegeuk Kim: add description]
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/gc.c | 17 +++++------------
+ 1 file changed, 5 insertions(+), 12 deletions(-)
+
+diff --git a/fs/f2fs/gc.c b/fs/f2fs/gc.c
+index 3a9df36..35f9b1a 100644
+--- a/fs/f2fs/gc.c
++++ b/fs/f2fs/gc.c
+@@ -321,28 +321,21 @@ static const struct victim_selection default_v_ops = {
+ 
+ static struct inode *find_gc_inode(nid_t ino, struct list_head *ilist)
+ {
+-	struct list_head *this;
+ 	struct inode_entry *ie;
+ 
+-	list_for_each(this, ilist) {
+-		ie = list_entry(this, struct inode_entry, list);
++	list_for_each_entry(ie, ilist, list)
+ 		if (ie->inode->i_ino == ino)
+ 			return ie->inode;
+-	}
+ 	return NULL;
+ }
+ 
+ static void add_gc_inode(struct inode *inode, struct list_head *ilist)
+ {
+-	struct list_head *this;
+-	struct inode_entry *new_ie, *ie;
++	struct inode_entry *new_ie;
+ 
+-	list_for_each(this, ilist) {
+-		ie = list_entry(this, struct inode_entry, list);
+-		if (ie->inode == inode) {
+-			iput(inode);
+-			return;
+-		}
++	if (inode == find_gc_inode(inode->i_ino, ilist)) {
++		iput(inode);
++		return;
+ 	}
+ repeat:
+ 	new_ie = kmem_cache_alloc(winode_slab, GFP_NOFS);
+-- 
+1.8.3.1.605.g85318f5
+

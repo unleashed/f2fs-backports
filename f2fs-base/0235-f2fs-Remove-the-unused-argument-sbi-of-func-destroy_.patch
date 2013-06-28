@@ -1,0 +1,41 @@
+From fb81fe78463ecd27888dcdf88e728775d5858746 Mon Sep 17 00:00:00 2001
+From: Gu Zheng <guz.fnst@cn.fujitsu.com>
+Date: Thu, 27 Jun 2013 09:28:54 +0800
+Subject: [PATCH] f2fs: Remove the unused argument "sbi" of func
+ destroy_fsync_dnodes()
+
+As destroy_fsync_dnodes() is a simple list-cleanup func, so delete the unused
+and unrelated f2fs_sb_info argument of it.
+
+Signed-off-by: Gu Zheng <guz.fnst@cn.fujitsu.com>
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/recovery.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/fs/f2fs/recovery.c b/fs/f2fs/recovery.c
+index 9db8239..d56d951 100644
+--- a/fs/f2fs/recovery.c
++++ b/fs/f2fs/recovery.c
+@@ -192,8 +192,7 @@ out:
+ 	return err;
+ }
+ 
+-static void destroy_fsync_dnodes(struct f2fs_sb_info *sbi,
+-					struct list_head *head)
++static void destroy_fsync_dnodes(struct list_head *head)
+ {
+ 	struct fsync_inode_entry *entry, *tmp;
+ 
+@@ -438,7 +437,7 @@ int recover_fsync_data(struct f2fs_sb_info *sbi)
+ 	err = recover_data(sbi, &inode_list, CURSEG_WARM_NODE);
+ 	BUG_ON(!list_empty(&inode_list));
+ out:
+-	destroy_fsync_dnodes(sbi, &inode_list);
++	destroy_fsync_dnodes(&inode_list);
+ 	kmem_cache_destroy(fsync_entry_slab);
+ 	sbi->por_doing = 0;
+ 	if (!err)
+-- 
+1.8.3.1.605.g85318f5
+

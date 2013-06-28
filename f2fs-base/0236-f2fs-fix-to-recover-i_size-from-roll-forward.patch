@@ -1,0 +1,65 @@
+From 7201ddbdcf4cd9e61f00e88be51f8ae475b2450f Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Thu, 27 Jun 2013 13:04:08 +0900
+Subject: [PATCH] f2fs: fix to recover i_size from roll-forward
+
+If user requests many data writes and fsync together, the last updated i_size
+should be stored to the inode block consistently.
+
+But, previous write_end just marks the inode as dirty and doesn't update its
+metadata into its inode block.
+After that, fsync just writes the inode block with newly updated data index
+excluding inode metadata updates.
+
+So, this patch introduces write_end in which updates inode block too when the
+i_size is changed.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/data.c | 23 ++++++++++++++++++++++-
+ 1 file changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/fs/f2fs/data.c b/fs/f2fs/data.c
+index 6d4a743..e88f46f 100644
+--- a/fs/f2fs/data.c
++++ b/fs/f2fs/data.c
+@@ -701,6 +701,27 @@ err:
+ 	return err;
+ }
+ 
++static int f2fs_write_end(struct file *file,
++			struct address_space *mapping,
++			loff_t pos, unsigned len, unsigned copied,
++			struct page *page, void *fsdata)
++{
++	struct inode *inode = page->mapping->host;
++
++	SetPageUptodate(page);
++	set_page_dirty(page);
++
++	if (pos + copied > i_size_read(inode)) {
++		i_size_write(inode, pos + copied);
++		mark_inode_dirty(inode);
++		update_inode_page(inode);
++	}
++
++	unlock_page(page);
++	page_cache_release(page);
++	return copied;
++}
++
+ static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb,
+ 		const struct iovec *iov, loff_t offset, unsigned long nr_segs)
+ {
+@@ -757,7 +778,7 @@ const struct address_space_operations f2fs_dblock_aops = {
+ 	.writepage	= f2fs_write_data_page,
+ 	.writepages	= f2fs_write_data_pages,
+ 	.write_begin	= f2fs_write_begin,
+-	.write_end	= nobh_write_end,
++	.write_end	= f2fs_write_end,
+ 	.set_page_dirty	= f2fs_set_data_page_dirty,
+ 	.invalidatepage	= f2fs_invalidate_data_page,
+ 	.releasepage	= f2fs_release_data_page,
+-- 
+1.8.3.1.605.g85318f5
+

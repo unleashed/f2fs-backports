@@ -1,0 +1,105 @@
+From ed1e92d596f5356ff2f8f8af2818d36ca31f5cf1 Mon Sep 17 00:00:00 2001
+From: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+Date: Wed, 19 Jun 2013 20:47:19 +0900
+Subject: [PATCH] f2fs: fix crc endian conversion
+
+While calculating CRC for the checkpoint block, we use __u32, but when storing
+the crc value to the disk, we use __le32.
+
+Let's fix the inconsistency.
+
+Signed-off-by: Jaegeuk Kim <jaegeuk.kim@samsung.com>
+---
+ fs/f2fs/checkpoint.c | 12 ++++++------
+ fs/f2fs/f2fs.h       | 19 +++++++++++++++----
+ 2 files changed, 21 insertions(+), 10 deletions(-)
+
+diff --git a/fs/f2fs/checkpoint.c b/fs/f2fs/checkpoint.c
+index 9a77509..66a6b85 100644
+--- a/fs/f2fs/checkpoint.c
++++ b/fs/f2fs/checkpoint.c
+@@ -357,8 +357,8 @@ static struct page *validate_checkpoint(struct f2fs_sb_info *sbi,
+ 	unsigned long blk_size = sbi->blocksize;
+ 	struct f2fs_checkpoint *cp_block;
+ 	unsigned long long cur_version = 0, pre_version = 0;
+-	unsigned int crc = 0;
+ 	size_t crc_offset;
++	__u32 crc = 0;
+ 
+ 	/* Read the 1st cp block in this CP pack */
+ 	cp_page_1 = get_meta_page(sbi, cp_addr);
+@@ -369,7 +369,7 @@ static struct page *validate_checkpoint(struct f2fs_sb_info *sbi,
+ 	if (crc_offset >= blk_size)
+ 		goto invalid_cp1;
+ 
+-	crc = *(unsigned int *)((unsigned char *)cp_block + crc_offset);
++	crc = le32_to_cpu(*((__u32 *)((unsigned char *)cp_block + crc_offset)));
+ 	if (!f2fs_crc_valid(crc, cp_block, crc_offset))
+ 		goto invalid_cp1;
+ 
+@@ -384,7 +384,7 @@ static struct page *validate_checkpoint(struct f2fs_sb_info *sbi,
+ 	if (crc_offset >= blk_size)
+ 		goto invalid_cp2;
+ 
+-	crc = *(unsigned int *)((unsigned char *)cp_block + crc_offset);
++	crc = le32_to_cpu(*((__u32 *)((unsigned char *)cp_block + crc_offset)));
+ 	if (!f2fs_crc_valid(crc, cp_block, crc_offset))
+ 		goto invalid_cp2;
+ 
+@@ -648,7 +648,7 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, bool is_umount)
+ 	block_t start_blk;
+ 	struct page *cp_page;
+ 	unsigned int data_sum_blocks, orphan_blocks;
+-	unsigned int crc32 = 0;
++	__u32 crc32 = 0;
+ 	void *kaddr;
+ 	int i;
+ 
+@@ -717,8 +717,8 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, bool is_umount)
+ 	get_nat_bitmap(sbi, __bitmap_ptr(sbi, NAT_BITMAP));
+ 
+ 	crc32 = f2fs_crc32(ckpt, le32_to_cpu(ckpt->checksum_offset));
+-	*(__le32 *)((unsigned char *)ckpt +
+-				le32_to_cpu(ckpt->checksum_offset))
++	*((__le32 *)((unsigned char *)ckpt +
++				le32_to_cpu(ckpt->checksum_offset)))
+ 				= cpu_to_le32(crc32);
+ 
+ 	start_blk = __start_cp_addr(sbi);
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index 863a5e91..467d42d 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -47,14 +47,25 @@ struct f2fs_mount_info {
+ 	unsigned int	opt;
+ };
+ 
+-static inline __u32 f2fs_crc32(void *buff, size_t len)
++#define CRCPOLY_LE 0xedb88320
++
++static inline __u32 f2fs_crc32(void *buf, size_t len)
+ {
+-	return crc32_le(F2FS_SUPER_MAGIC, buff, len);
++	unsigned char *p = (unsigned char *)buf;
++	__u32 crc = F2FS_SUPER_MAGIC;
++	int i;
++
++	while (len--) {
++		crc ^= *p++;
++		for (i = 0; i < 8; i++)
++			crc = (crc >> 1) ^ ((crc & 1) ? CRCPOLY_LE : 0);
++	}
++	return crc;
+ }
+ 
+-static inline bool f2fs_crc_valid(__u32 blk_crc, void *buff, size_t buff_size)
++static inline bool f2fs_crc_valid(__u32 blk_crc, void *buf, size_t buf_size)
+ {
+-	return f2fs_crc32(buff, buff_size) == blk_crc;
++	return f2fs_crc32(buf, buf_size) == blk_crc;
+ }
+ 
+ /*
+-- 
+1.8.3.1.605.g85318f5
+
